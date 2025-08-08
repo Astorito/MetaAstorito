@@ -1,17 +1,17 @@
-// Import Express.js
+// Import Express.js y axios para enviar respuestas
 const express = require('express');
+const axios = require('axios');
 
-// Create an Express app
 const app = express();
-
-// Middleware to parse JSON bodies
 app.use(express.json());
 
-// Set port and verify_token
+// Variables de entorno
 const port = process.env.PORT || 3000;
 const verifyToken = process.env.VERIFY_TOKEN;
+const whatsappToken = process.env.WHATSAPP_TOKEN; // tu token de acceso de Meta
+const phoneNumberId = process.env.PHONE_NUMBER_ID; // ID de tu número de WhatsApp en Cloud API
 
-// Route for GET requests
+// Verificación del webhook
 app.get('/', (req, res) => {
   const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
 
@@ -23,15 +23,45 @@ app.get('/', (req, res) => {
   }
 });
 
-// Route for POST requests
-app.post('/', (req, res) => {
+// Recepción de mensajes y respuesta automática
+app.post('/', async (req, res) => {
   const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
   console.log(`\n\nWebhook received ${timestamp}\n`);
   console.log(JSON.stringify(req.body, null, 2));
-  res.status(200).end();
+
+  try {
+    const entry = req.body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const message = changes?.value?.messages?.[0];
+
+    if (message && message.from) {
+      const from = message.from; // número del remitente
+      console.log(`Responding to: ${from}`);
+
+      // Enviar "Bien, gracias" como respuesta
+      await axios.post(
+        `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to: from,
+          text: { body: 'Bien, gracias' }
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${whatsappToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    }
+  } catch (err) {
+    console.error('Error sending message:', err?.response?.data || err.message);
+  }
+
+  res.sendStatus(200);
 });
 
-// Start the server
+// Iniciar servidor
 app.listen(port, () => {
   console.log(`\nListening on port ${port}\n`);
 });
