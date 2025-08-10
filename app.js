@@ -12,6 +12,7 @@ const verifyToken = process.env.VERIFY_TOKEN;
 const whatsappToken = process.env.WHATSAPP_TOKEN; // Token Meta
 const phoneNumberId = process.env.PHONE_NUMBER_ID; // ID del número de WhatsApp Cloud API
 const openaiToken = process.env.OPENAI_API_KEY; // Token de OpenAI
+const model = process.env.OPENAI_MODEL || "gpt-3.5-turbo"; // Modelo configurable
 
 // Verificación del webhook
 app.get('/', (req, res) => {
@@ -40,11 +41,11 @@ app.post('/', async (req, res) => {
       const from = message.from; // número remitente
       console.log(`Mensaje de ${from}: ${textMessage}`);
 
-      // 1️⃣ Llamar a GPT-4o para generar respuesta
+      // 1️⃣ Llamar a OpenAI GPT para generar respuesta
       const gptResponse = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
-          model: "gpt-4o",
+          model: model,
           messages: [
             { role: "system", content: "Eres un asistente útil que responde de forma clara y breve." },
             { role: "user", content: textMessage }
