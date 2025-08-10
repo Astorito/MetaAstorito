@@ -160,6 +160,37 @@ app.get("/", (req, res) => {
 });
 
 // Webhook POST para recepción mensajes
+function parseRelativeDate(dateStr) {
+  const today = new Date();
+  dateStr = (dateStr || "").toLowerCase().trim();
+
+  if (dateStr === "mañana") {
+    const d = new Date(today);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const matchDays = dateStr.match(/en (\d+) días?/);
+  if (matchDays) {
+    const daysToAdd = parseInt(matchDays[1]);
+    const d = new Date(today);
+    d.setDate(d.getDate() + daysToAdd);
+    return d.toISOString().slice(0, 10);
+  }
+
+  if (dateStr.includes("en una semana")) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // Si viene en formato YYYY-MM-DD, devolver igual
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+
+  // No se pudo interpretar
+  return null;
+}
+
 app.post("/", async (req, res) => {
   console.log(`\n\nWebhook recibido: ${new Date().toISOString()}\n`);
   console.log(JSON.stringify(req.body, null, 2));
@@ -182,8 +213,16 @@ app.post("/", async (req, res) => {
     const parsed = await parseReminderWithOpenAI(messageText);
 
     if (parsed.type === "reminder") {
-      // Construir fechas y validar
-      const dateStr = `${parsed.data.date}T${parsed.data.time || "09:00"}:00`;
+      // Interpretar fecha relativa o absoluta
+      let fechaReal = parseRelativeDate(parsed.data.date);
+      if (!fechaReal) {
+        await sendWhatsAppMessage(from, "No pude entender la fecha. Por favor escribila en formato YYYY-MM-DD o como 'mañana', 'en 2 días', etc.");
+        return res.sendStatus(200);
+      }
+
+      // Fecha completa con hora (o default 09:00)
+      const hora = parsed.data.time || "09:00";
+      const dateStr = `${fechaReal}T${hora}:00`;
       const eventDate = new Date(dateStr);
 
       if (isNaN(eventDate.getTime())) {
@@ -191,9 +230,15 @@ app.post("/", async (req, res) => {
         return res.sendStatus(200);
       }
 
+      // Si no se indicó notify, pedirlo antes de guardar
+      if (!parsed.data.notify || parsed.data.notify.trim() === "") {
+        await sendWhatsAppMessage(from, "¿Cuándo querés que te avise? Por favor decímelo (ejemplo: '1 hora antes', 'a la hora del evento', '2025-08-15 a las 14:00')");
+        return res.sendStatus(200);
+      }
+
       // Calcular notifyAt según parsed.data.notify
       let notifyAt = eventDate;
-      const notify = (parsed.data.notify || "").toLowerCase();
+      const notify = parsed.data.notify.toLowerCase();
 
       if (notify.includes("antes")) {
         const hoursBefore = parseInt(notify.split(" ")[0]);
@@ -201,13 +246,12 @@ app.post("/", async (req, res) => {
           notifyAt = new Date(eventDate.getTime() - hoursBefore * 3600 * 1000);
         }
       } else if (notify.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
-        // Ejemplo: "2025-08-15 a las 14:00"
         const notifyMatch = notify.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
         if (notifyMatch) {
           notifyAt = new Date(`${notifyMatch[1]}T${notifyMatch[2]}:00`);
         }
       }
-      // Si notifyAt es pasada, ajustar a ahora + 1 min para evitar no programar
+
       if (notifyAt < new Date()) {
         notifyAt = new Date(Date.now() + 60 * 1000);
       }
@@ -230,14 +274,12 @@ app.post("/", async (req, res) => {
       // Respuesta normal GPT u otro texto
       await sendWhatsAppMessage(from, parsed.content);
     }
-
   } catch (err) {
     console.error("Error:", err?.response?.data || err.message);
   }
 
   res.sendStatus(200);
 });
-
 
 // Iniciar servidor
 app.listen(port, () => {
