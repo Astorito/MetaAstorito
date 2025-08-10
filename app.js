@@ -40,7 +40,7 @@ app.post('/', async (req, res) => {
       const from = message.from; // número remitente
       console.log(`Mensaje de ${from}: ${textMessage}`);
 
-      // 1️⃣ Llamar a GPT-4o-mini para generar respuesta
+      // 1️⃣ Llamar a GPT-4o para generar respuesta
       const gptResponse = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
