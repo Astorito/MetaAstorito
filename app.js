@@ -1,9 +1,8 @@
 // Importar dependencias
-const express = require("express");
-const mongoose = require("mongoose");
-const OpenAI = require("openai");
-const axios = require("axios");
-require("dotenv").config();
+const express = require('express');
+const axios = require('axios');
+const mongoose = require('mongoose');
+require('dotenv').config();
 
 const app = express();
 app.use(express.json());
@@ -13,11 +12,11 @@ const port = process.env.PORT || 3000;
 const verifyToken = process.env.VERIFY_TOKEN;
 const whatsappToken = process.env.WHATSAPP_TOKEN;
 const phoneNumberId = process.env.PHONE_NUMBER_ID;
+const openaiToken = process.env.OPENAI_API_KEY;
+const model = process.env.OPENAI_MODEL || "gpt-3.5-turbo";
 const mongoUri = process.env.MONGODB_URI;
-const openaiModel = process.env.OPENAI_MODEL || "gpt-4o-mini";
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Esquema MongoDB para recordatorios
+// --- Esquema y modelo MongoDB para recordatorios ---
 const reminderSchema = new mongoose.Schema({
   phone: String,
   title: String,
@@ -27,9 +26,9 @@ const reminderSchema = new mongoose.Schema({
   sent: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
-const Reminder = mongoose.model("Reminder", reminderSchema);
+const Reminder = mongoose.model('Reminder', reminderSchema);
 
-// Conectar a MongoDB
+// --- Conectar a MongoDB ---
 mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ Conectado a MongoDB"))
   .catch(err => {
@@ -37,7 +36,7 @@ mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
     process.exit(1);
   });
 
-// Enviar mensaje WhatsApp
+// --- Función para enviar mensaje WhatsApp ---
 async function sendWhatsAppMessage(to, message) {
   try {
     await axios.post(
@@ -59,67 +58,56 @@ async function sendWhatsAppMessage(to, message) {
   }
 }
 
-// Parsear recordatorio con OpenAI
+// --- Función para parsear recordatorio con OpenAI ---
 async function parseReminderWithOpenAI(text) {
-  const prompt = `
-Analiza el siguiente mensaje del usuario y devuelve SOLO un JSON con esta estructura:
-{
-  "title": "título del evento",
-  "emoji": "emoji relacionado",
-  "date": "YYYY-MM-DD",
-  "time": "HH:MM",
-  "notify": "instrucciones de aviso"
-}
-
-Reglas:
-- Si el usuario pide ser avisado X horas antes, en notify pon "X antes"
-- Si no especifica aviso, pon "A la hora del evento"
-- Si especifica hora concreta para el aviso, en notify pon "YYYY-MM-DD a las HH:MM"
-- Si no especifica hora, usa "09:00" por defecto
-- Si no especifica emoji, usa "📝" por defecto
-- Devuelve SOLO el JSON, sin formato ni comillas triples
-
-Si falta la fecha, responde EXACTAMENTE: Perfecto! Para cuando queres que lo programe
-Si falta la hora de aviso, responde EXACTAMENTE: Perfecto! Cuando queres que te avise
-
-Mensaje: "${text}"
-  `;
+  const systemPrompt = `Eres un asistente que extrae información de recordatorios en español.
+Devuelve SOLO un JSON con: "title", "emoji", "date" (YYYY-MM-DD), "time" (HH:MM), "notify" (instrucciones para aviso).
+Si falta hora usa "09:00".
+Si falta emoji usa "📝".
+Ejemplo:
+{"title":"Ir al médico","emoji":"🩺","date":"2025-08-15","time":"14:30","notify":"1 antes"}
+Devuelve solo JSON puro.
+Mensaje a analizar: "${text}"`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: openaiModel,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0
-    });
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: text }
+        ],
+        temperature: 0
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${openaiToken}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
 
-    const response = completion.choices[0].message.content.trim();
+    let content = response.data.choices[0].message.content.trim();
 
-    if (response === "Perfecto! Para cuando queres que lo programe" || response === "Perfecto! Cuando queres que te avise") {
-      return { type: "message", content: response };
+    if (content.startsWith("```")) {
+      content = content.replace(/```json?/, '').replace(/```$/, '').trim();
     }
 
-    // Intentar parsear JSON
-    let jsonText = response;
-    if (jsonText.startsWith("```")) {
-      jsonText = jsonText.replace(/```json?/, "").replace(/```$/, "").trim();
-    }
+    const reminderData = JSON.parse(content);
 
-    const parsed = JSON.parse(jsonText);
+    reminderData.emoji = reminderData.emoji || "📝";
+    reminderData.time = reminderData.time || "09:00";
 
-    // Completar con valores por defecto si faltan
-    parsed.emoji = parsed.emoji || "📝";
-    parsed.time = parsed.time || "09:00";
-    parsed.notify = parsed.notify || "A la hora del evento";
-
-    return { type: "reminder", data: parsed };
+    return { type: "reminder", data: reminderData };
 
   } catch (err) {
-    console.error("Error en OpenAI:", err);
-    return { type: "message", content: "No pude procesar tu recordatorio." };
+    console.error("Error parseando recordatorio con OpenAI:", err.response?.data || err.message);
+    return { type: "message", content: "No pude entender tu recordatorio." };
   }
 }
 
-// Programar recordatorio para enviar aviso
+// --- Programar recordatorio para enviar aviso ---
 function scheduleReminder(reminder) {
   const now = new Date();
   const delay = reminder.notifyAt.getTime() - now.getTime();
@@ -130,7 +118,7 @@ function scheduleReminder(reminder) {
   }
 
   setTimeout(async () => {
-    const message = `⏰ *Recordatorio* ${reminder.emoji}: ${reminder.title} - ${reminder.date.toLocaleString()}`;
+    const message = `Hola! Acordate que hoy tenes ${reminder.title} ${reminder.emoji}`;
     await sendWhatsAppMessage(reminder.phone, message);
 
     reminder.sent = true;
@@ -140,56 +128,65 @@ function scheduleReminder(reminder) {
   console.log(`Recordatorio programado para ${reminder.notifyAt.toLocaleString()} (en ${delay} ms)`);
 }
 
-// Al iniciar, cargar y programar recordatorios pendientes
+// --- Cargar y programar recordatorios pendientes al iniciar ---
 async function initScheduledReminders() {
   const now = new Date();
   const pending = await Reminder.find({ sent: false, notifyAt: { $gt: now } });
-  pending.forEach(scheduleReminder);
+  pending.forEach(r => scheduleReminder(r));
 }
 initScheduledReminders();
 
-// Webhook GET para verificación
-app.get("/", (req, res) => {
-  const { "hub.mode": mode, "hub.challenge": challenge, "hub.verify_token": token } = req.query;
-  if (mode === "subscribe" && token === verifyToken) {
-    console.log("✅ Webhook verificado");
-    res.status(200).send(challenge);
-  } else {
-    res.status(403).end();
+// --- Diccionario simple para emojis por palabra clave ---
+const emojiMap = {
+  peluqueria: "✂️",
+  corte: "✂️",
+  doctor: "🩺",
+  medico: "🩺",
+  odontologo: "🦷",
+  cumpleaños: "🎂",
+  cumple: "🎉",
+  reunion: "📅",
+  gimnasio: "🏋️‍♂️",
+  clase: "📚",
+  cita: "📌",
+  default: "📝",
+};
+
+// --- Estado temporal para recordatorios pendientes de confirmación de aviso ---
+const pendingReminders = new Map(); // key = phone, value = partial reminder data
+
+// --- Función para parsear fechas relativas simples ---
+function parseRelativeDate(input) {
+  input = input.toLowerCase().trim();
+  const now = new Date();
+
+  if (input === "hoy") return now.toISOString().slice(0, 10);
+  if (input === "mañana") {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().slice(0, 10);
   }
-});
-
-// Webhook POST para recepción mensajes
-function parseRelativeDate(dateStr) {
-  const today = new Date();
-  dateStr = (dateStr || "").toLowerCase().trim();
-
-  if (dateStr === "mañana") {
-    const d = new Date(today);
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
+  // En 2 días, en 3 dias, en 1 semana, etc
+  let match = input.match(/en (\d+) (día|dias|días|semana|semanas)/);
+  if (match) {
+    const val = parseInt(match[1]);
+    if (isNaN(val)) return null;
+    const date = new Date(now);
+    if (match[2].startsWith("dia")) {
+      date.setDate(date.getDate() + val);
+    } else if (match[2].startsWith("semana")) {
+      date.setDate(date.getDate() + val * 7);
+    }
+    return date.toISOString().slice(0, 10);
   }
+  // Si viene en formato YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
 
-  const matchDays = dateStr.match(/en (\d+) días?/);
-  if (matchDays) {
-    const daysToAdd = parseInt(matchDays[1]);
-    const d = new Date(today);
-    d.setDate(d.getDate() + daysToAdd);
-    return d.toISOString().slice(0, 10);
-  }
-
-  if (dateStr.includes("en una semana")) {
-    const d = new Date(today);
-    d.setDate(d.getDate() + 7);
-    return d.toISOString().slice(0, 10);
-  }
-
-  // Si viene en formato YYYY-MM-DD, devolver igual
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-
-  // No se pudo interpretar
+  // No pudo interpretar
   return null;
 }
+
+// --- Manejo del webhook POST ---
 
 app.post("/", async (req, res) => {
   console.log(`\n\nWebhook recibido: ${new Date().toISOString()}\n`);
@@ -209,7 +206,84 @@ app.post("/", async (req, res) => {
 
     console.log(`Mensaje de ${from}: ${messageText}`);
 
-    // Siempre enviar a parseReminderWithOpenAI para decidir si es recordatorio o mensaje normal
+    // Chequear si hay recordatorio pendiente sin notify para este usuario
+    if (pendingReminders.has(from)) {
+      const partial = pendingReminders.get(from);
+
+      // Este mensaje debería ser la respuesta para notify
+      const notifyText = messageText.toLowerCase();
+
+      // Guardar notify en el partial
+      partial.notify = notifyText;
+
+      // Construir fecha real
+      const fechaReal = parseRelativeDate(partial.date);
+      if (!fechaReal) {
+        await sendWhatsAppMessage(from, "No pude entender la fecha. Por favor escribila en formato YYYY-MM-DD o como 'mañana', 'en 2 días', etc.");
+        return res.sendStatus(200);
+      }
+
+      // Hora o default 09:00
+      const hora = partial.time || "09:00";
+      const dateStr = `${fechaReal}T${hora}:00`;
+      const eventDate = new Date(dateStr);
+      if (isNaN(eventDate.getTime())) {
+        await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
+        return res.sendStatus(200);
+      }
+
+      // Calcular notifyAt según notify
+      let notifyAt = eventDate;
+      const notify = notifyText;
+
+      if (notify.includes("antes")) {
+        const hoursBefore = parseInt(notify.split(" ")[0]);
+        if (!isNaN(hoursBefore)) {
+          notifyAt = new Date(eventDate.getTime() - hoursBefore * 3600 * 1000);
+        }
+      } else if (notify.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
+        const notifyMatch = notify.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
+        if (notifyMatch) {
+          notifyAt = new Date(`${notifyMatch[1]}T${notifyMatch[2]}:00`);
+        }
+      }
+
+      if (notifyAt < new Date()) {
+        notifyAt = new Date(Date.now() + 60 * 1000);
+      }
+
+      // Elegir emoji por palabra clave en title si no viene
+      let emoji = partial.emoji;
+      if (!emoji || emoji === "📝") {
+        const lowerTitle = partial.title.toLowerCase();
+        emoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1] || "📝";
+      }
+
+      const newReminder = new Reminder({
+        phone: from,
+        title: partial.title,
+        emoji,
+        date: eventDate,
+        notifyAt,
+        sent: false
+      });
+
+      await newReminder.save();
+      scheduleReminder(newReminder);
+      pendingReminders.delete(from);
+
+      await sendWhatsAppMessage(from,
+        `Genial! Ahí guardamos tu evento 🚀\n\n` +
+        `${emoji} *${partial.title}*\n` +
+        `🗓️ Fecha: ${eventDate.toLocaleDateString()}\n` +
+        `⌛ Aviso: ${notifyAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${notifyAt.toLocaleDateString()}\n\n` +
+        `Avisanos si necesitás que agendemos otro evento!`
+      );
+
+      return res.sendStatus(200);
+    }
+
+    // No hay recordatorio pendiente, parseamos normalmente
     const parsed = await parseReminderWithOpenAI(messageText);
 
     if (parsed.type === "reminder") {
@@ -230,13 +304,21 @@ app.post("/", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      // Si no se indicó notify, pedirlo antes de guardar
+      // Si no se indicó notify, guardar parcialmente y pedir aviso
       if (!parsed.data.notify || parsed.data.notify.trim() === "") {
-        await sendWhatsAppMessage(from, "¿Cuándo querés que te avise? Por favor decímelo (ejemplo: '1 hora antes', 'a la hora del evento', '2025-08-15 a las 14:00')");
+        // Guardamos parcialmente para esperar aviso
+        pendingReminders.set(from, {
+          title: parsed.data.title,
+          emoji: parsed.data.emoji || "📝",
+          date: parsed.data.date,
+          time: parsed.data.time || "09:00"
+        });
+
+        await sendWhatsAppMessage(from, "Perfecto! ¿A qué hora querés que te avise? Por favor decímelo (ejemplo: '1 hora antes', 'a la hora del evento', '2025-08-15 a las 14:00')");
         return res.sendStatus(200);
       }
 
-      // Calcular notifyAt según parsed.data.notify
+      // Si notify está definido, calculamos notifyAt normalmente
       let notifyAt = eventDate;
       const notify = parsed.data.notify.toLowerCase();
 
@@ -256,10 +338,17 @@ app.post("/", async (req, res) => {
         notifyAt = new Date(Date.now() + 60 * 1000);
       }
 
+      // Emoji por palabra clave si no viene
+      let emoji = parsed.data.emoji;
+      if (!emoji || emoji === "📝") {
+        const lowerTitle = parsed.data.title.toLowerCase();
+        emoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1] || "📝";
+      }
+
       const newReminder = new Reminder({
         phone: from,
         title: parsed.data.title,
-        emoji: parsed.data.emoji || "📝",
+        emoji,
         date: eventDate,
         notifyAt,
         sent: false
@@ -268,7 +357,13 @@ app.post("/", async (req, res) => {
       await newReminder.save();
       scheduleReminder(newReminder);
 
-      await sendWhatsAppMessage(from, `✅ Recordatorio guardado: ${newReminder.emoji} ${newReminder.title} - ${eventDate.toLocaleString()}`);
+      await sendWhatsAppMessage(from,
+        `Genial! Ahí guardamos tu evento 🚀\n\n` +
+        `${emoji} *${parsed.data.title}*\n` +
+        `🗓️ Fecha: ${eventDate.toLocaleDateString()}\n` +
+        `⌛ Aviso: ${notifyAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${notifyAt.toLocaleDateString()}\n\n` +
+        `Avisanos si necesitás que agendemos otro evento!`
+      );
 
     } else {
       // Respuesta normal GPT u otro texto
@@ -281,7 +376,18 @@ app.post("/", async (req, res) => {
   res.sendStatus(200);
 });
 
-// Iniciar servidor
+// --- Verificación webhook ---
+app.get('/', (req, res) => {
+  const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('WEBHOOK VERIFIED');
+    res.status(200).send(challenge);
+  } else {
+    res.status(403).end();
+  }
+});
+
+// --- Iniciar servidor ---
 app.listen(port, () => {
   console.log(`Servidor escuchando en puerto ${port}`);
 });
