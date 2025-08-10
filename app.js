@@ -1,6 +1,7 @@
-// Import Express.js y axios para enviar respuestas
+// Importar Express, axios y dotenv
 const express = require('express');
 const axios = require('axios');
+require('dotenv').config();
 
 const app = express();
 app.use(express.json());
@@ -8,8 +9,9 @@ app.use(express.json());
 // Variables de entorno
 const port = process.env.PORT || 3000;
 const verifyToken = process.env.VERIFY_TOKEN;
-const whatsappToken = process.env.WHATSAPP_TOKEN; // tu token de acceso de Meta
-const phoneNumberId = process.env.PHONE_NUMBER_ID; // ID de tu número de WhatsApp en Cloud API
+const whatsappToken = process.env.WHATSAPP_TOKEN; // Token Meta
+const phoneNumberId = process.env.PHONE_NUMBER_ID; // ID del número de WhatsApp Cloud API
+const openaiToken = process.env.OPENAI_API_KEY; // Token de OpenAI
 
 // Verificación del webhook
 app.get('/', (req, res) => {
@@ -23,39 +25,61 @@ app.get('/', (req, res) => {
   }
 });
 
-// Recepción de mensajes y respuesta automática
+// Recepción de mensajes
 app.post('/', async (req, res) => {
-  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  console.log(`\n\nWebhook received ${timestamp}\n`);
+  console.log(`\n\nWebhook recibido: ${new Date().toISOString()}\n`);
   console.log(JSON.stringify(req.body, null, 2));
 
   try {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const message = changes?.value?.messages?.[0];
+    const textMessage = message?.text?.body;
 
-    if (message && message.from) {
-      const from = message.from; // número del remitente
-      console.log(`Responding to: ${from}`);
+    if (message && message.from && textMessage) {
+      const from = message.from; // número remitente
+      console.log(`Mensaje de ${from}: ${textMessage}`);
 
-      // Enviar "Bien, gracias" como respuesta
-      await axios.post(
-        `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+      // 1️⃣ Llamar a GPT-4o-mini para generar respuesta
+      const gptResponse = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
         {
-          messaging_product: 'whatsapp',
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "Eres un asistente útil que responde de forma clara y breve." },
+            { role: "user", content: textMessage }
+          ],
+          temperature: 0.7
+        },
+        {
+          headers: {
+            "Authorization": `Bearer ${openaiToken}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      const replyText = gptResponse.data.choices[0].message.content;
+      console.log(`Respuesta GPT: ${replyText}`);
+
+      // 2️⃣ Enviar respuesta a WhatsApp
+      await axios.post(
+        `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+        {
+          messaging_product: "whatsapp",
           to: from,
-          text: { body: 'Bien, gracias' }
+          text: { body: replyText }
         },
         {
           headers: {
             Authorization: `Bearer ${whatsappToken}`,
-            'Content-Type': 'application/json'
+            "Content-Type": "application/json"
           }
         }
       );
     }
   } catch (err) {
-    console.error('Error sending message:', err?.response?.data || err.message);
+    console.error("Error:", err?.response?.data || err.message);
   }
 
   res.sendStatus(200);
@@ -63,5 +87,5 @@ app.post('/', async (req, res) => {
 
 // Iniciar servidor
 app.listen(port, () => {
-  console.log(`\nListening on port ${port}\n`);
+  console.log(`Servidor escuchando en puerto ${port}`);
 });
