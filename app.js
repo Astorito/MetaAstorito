@@ -168,107 +168,76 @@ app.post("/", async (req, res) => {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const message = changes?.value?.messages?.[0];
-    const textMessage = message?.text?.body;
+    const from = message?.from;
+    const messageText = message?.text?.body;
 
-    if (message && message.from && textMessage) {
-      const from = message.from;
-      console.log(`Mensaje de ${from}: ${textMessage}`);
-
-      // Detectar si es recordatorio con palabras clave
-      const lowerText = textMessage.toLowerCase();
-      const reminderKeywords = ["recordarme", "recordatorio", "recuerdame", "recuérdame", "avísame", "acordarme", "acordar", "acorde", "recordar"];
-      const isReminder = reminderKeywords.some(word => lowerText.includes(word));
-
-      if (isReminder) {
-        let reminderText = textMessage;
-        if (lowerText.startsWith("recordarme")) {
-          reminderText = textMessage.slice("recordarme".length).trim();
-        }
-
-        const parsed = await parseReminderWithOpenAI(reminderText);
-
-        if (parsed.type === "message") {
-          await sendWhatsAppMessage(from, parsed.content);
-          return res.sendStatus(200);
-        }
-
-        if (parsed.type === "reminder") {
-          const { title, emoji, date, time, notify } = parsed.data;
-
-          // Validar fecha y hora
-          if (!date) {
-            await sendWhatsAppMessage(from, "No especificaste la fecha del evento. Por favor intenta de nuevo.");
-            return res.sendStatus(200);
-          }
-
-          const dateStr = `${date}T${time}:00`;
-          const eventDate = new Date(dateStr);
-          if (isNaN(eventDate.getTime())) {
-            await sendWhatsAppMessage(from, "La fecha u hora no es válida. Intenta de nuevo.");
-            return res.sendStatus(200);
-          }
-
-          // Calcular notifyAt
-          let notifyAt = eventDate;
-          const notifyLower = notify.toLowerCase();
-
-          if (notifyLower.includes("antes")) {
-            const hoursBefore = parseInt(notifyLower.split(" ")[0]);
-            if (!isNaN(hoursBefore)) {
-              notifyAt = new Date(eventDate.getTime() - hoursBefore * 3600 * 1000);
-            }
-          } else if (notifyLower.includes("a la hora del evento")) {
-            notifyAt = eventDate;
-          } else {
-            // Intentar parsear fecha/hora exacta en notify (ejemplo: "2025-08-10 a las 15:00")
-            const match = notifyLower.match(/(\d{4}-\d{2}-\d{2})\s*a las\s*(\d{2}:\d{2})/);
-            if (match) {
-              notifyAt = new Date(`${match[1]}T${match[2]}:00`);
-            }
-          }
-
-          if (notifyAt < new Date()) {
-            await sendWhatsAppMessage(from, "La hora para el aviso ya pasó. Por favor poné una fecha/hora futura.");
-            return res.sendStatus(200);
-          }
-
-          const newReminder = new Reminder({
-            phone: from,
-            title,
-            emoji,
-            date: eventDate,
-            notifyAt,
-            sent: false
-          });
-
-          await newReminder.save();
-          scheduleReminder(newReminder);
-
-          await sendWhatsAppMessage(from, `¡Listo! Te recordaré "${title}" el ${eventDate.toLocaleString()}`);
-        }
-      } else {
-        // Respuesta normal GPT para otros mensajes
-        const gptResponse = await openai.chat.completions.create({
-          model: openaiModel,
-          messages: [
-            { role: "system", content: "Eres un asistente útil que responde de forma clara y breve." },
-            { role: "user", content: textMessage }
-          ],
-          temperature: 0.3
-        });
-
-        const replyText = gptResponse.choices[0].message.content;
-        console.log(`Respuesta GPT: ${replyText}`);
-
-        await sendWhatsAppMessage(from, replyText);
-      }
+    if (!message || !from || !messageText) {
+      console.log("No hay mensaje válido");
+      return res.sendStatus(200);
     }
+
+    console.log(`Mensaje de ${from}: ${messageText}`);
+
+    // Siempre enviar a parseReminderWithOpenAI para decidir si es recordatorio o mensaje normal
+    const parsed = await parseReminderWithOpenAI(messageText);
+
+    if (parsed.type === "reminder") {
+      // Construir fechas y validar
+      const dateStr = `${parsed.data.date}T${parsed.data.time || "09:00"}:00`;
+      const eventDate = new Date(dateStr);
+
+      if (isNaN(eventDate.getTime())) {
+        await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
+        return res.sendStatus(200);
+      }
+
+      // Calcular notifyAt según parsed.data.notify
+      let notifyAt = eventDate;
+      const notify = (parsed.data.notify || "").toLowerCase();
+
+      if (notify.includes("antes")) {
+        const hoursBefore = parseInt(notify.split(" ")[0]);
+        if (!isNaN(hoursBefore)) {
+          notifyAt = new Date(eventDate.getTime() - hoursBefore * 3600 * 1000);
+        }
+      } else if (notify.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
+        // Ejemplo: "2025-08-15 a las 14:00"
+        const notifyMatch = notify.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
+        if (notifyMatch) {
+          notifyAt = new Date(`${notifyMatch[1]}T${notifyMatch[2]}:00`);
+        }
+      }
+      // Si notifyAt es pasada, ajustar a ahora + 1 min para evitar no programar
+      if (notifyAt < new Date()) {
+        notifyAt = new Date(Date.now() + 60 * 1000);
+      }
+
+      const newReminder = new Reminder({
+        phone: from,
+        title: parsed.data.title,
+        emoji: parsed.data.emoji || "📝",
+        date: eventDate,
+        notifyAt,
+        sent: false
+      });
+
+      await newReminder.save();
+      scheduleReminder(newReminder);
+
+      await sendWhatsAppMessage(from, `✅ Recordatorio guardado: ${newReminder.emoji} ${newReminder.title} - ${eventDate.toLocaleString()}`);
+
+    } else {
+      // Respuesta normal GPT u otro texto
+      await sendWhatsAppMessage(from, parsed.content);
+    }
+
   } catch (err) {
     console.error("Error:", err?.response?.data || err.message);
   }
 
   res.sendStatus(200);
 });
+
 
 // Iniciar servidor
 app.listen(port, () => {
