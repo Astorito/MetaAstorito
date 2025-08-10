@@ -58,35 +58,6 @@ async function sendWhatsAppMessage(to, message) {
   }
 }
 
-// --- Función para formato YYYY-MM-DD local ---
-function formatDateLocal(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-// --- Función para normalizar texto (quita tildes y pone minúscula) ---
-function normalizeText(text) {
-  return text.toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-// --- Función para crear Date local a partir de fecha y hora ---
-function createLocalDate(fechaReal, hora) {
-  const [year, month, day] = fechaReal.split('-').map(Number);
-  const [hour, minute] = (hora || "09:00").split(':').map(Number);
-  return new Date(year, month - 1, day, hour, minute, 0);
-}
-
-// --- Función para obtener emoji a partir del título ---
-function getEmojiFromTitle(title, defaultEmoji = "📝") {
-  const normalizedTitle = normalizeText(title);
-  const found = Object.entries(emojiMap).find(([key]) => normalizedTitle.includes(key));
-  return found ? found[1] : defaultEmoji;
-}
-
 // --- Función para parsear recordatorio con OpenAI ---
 async function parseReminderWithOpenAI(text) {
   const systemPrompt = `Eres un asistente que extrae información de recordatorios en español.
@@ -189,11 +160,11 @@ function parseRelativeDate(input) {
   input = input.toLowerCase().trim();
   const now = new Date();
 
-  if (input === "hoy") return formatDateLocal(now);
+  if (input === "hoy") return now.toISOString().slice(0, 10);
   if (input === "mañana") {
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    return formatDateLocal(tomorrow);
+    return tomorrow.toISOString().slice(0, 10);
   }
   // En 2 días, en 3 dias, en 1 semana, etc
   let match = input.match(/en (\d+) (día|dias|días|semana|semanas)/);
@@ -206,7 +177,7 @@ function parseRelativeDate(input) {
     } else if (match[2].startsWith("semana")) {
       date.setDate(date.getDate() + val * 7);
     }
-    return formatDateLocal(date);
+    return date.toISOString().slice(0, 10);
   }
   // Si viene en formato YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
@@ -218,6 +189,20 @@ function parseRelativeDate(input) {
 // --- Función auxiliar para formatear fecha y hora tipo "11/08/2025 a las 09:00 AM"
 function formatDateTime(date) {
   return `${date.toLocaleDateString('es-AR')} a las ${date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+}
+
+// --- Formatear fecha local YYYY-MM-DD para comparar ---
+function formatDateLocal(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// --- Crear Date local con fecha + hora (HH:MM) ---
+function createLocalDate(fechaStr, horaStr) {
+  // fechaStr: YYYY-MM-DD, horaStr: HH:MM (24h)
+  return new Date(`${fechaStr}T${horaStr}:00`);
 }
 
 // --- Manejo del webhook POST ---
@@ -258,7 +243,8 @@ app.post("/", async (req, res) => {
 
       // Hora o default 09:00
       const hora = partial.time || "09:00";
-      const eventDate = createLocalDate(fechaReal, hora);
+      const dateStr = `${fechaReal}T${hora}:00`;
+      const eventDate = new Date(dateStr);
       if (isNaN(eventDate.getTime())) {
         await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
         return res.sendStatus(200);
@@ -276,7 +262,7 @@ app.post("/", async (req, res) => {
       } else if (notifyLower.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
         const notifyMatch = notifyLower.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
         if (notifyMatch) {
-          notifyAt = createLocalDate(notifyMatch[1], notifyMatch[2]);
+          notifyAt = new Date(`${notifyMatch[1]}T${notifyMatch[2]}:00`);
         }
       }
 
@@ -285,7 +271,10 @@ app.post("/", async (req, res) => {
       }
 
       // Elegir emoji por palabra clave en title si no viene o está default
-      let emoji = partial.emoji || getEmojiFromTitle(partial.title);
+      let emoji = partial.emoji || "📝";
+      const lowerTitle = partial.title.toLowerCase();
+      const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
+      if (foundEmoji) emoji = foundEmoji;
 
       const newReminder = new Reminder({
         phone: from,
@@ -315,6 +304,15 @@ app.post("/", async (req, res) => {
     const parsed = await parseReminderWithOpenAI(messageText);
 
     if (parsed.type === "reminder") {
+      // Validar fecha para evitar usar fechas pasadas
+      const todayStr = formatDateLocal(new Date());
+      if (/^\d{4}-\d{2}-\d{2}$/.test(parsed.data.date)) {
+        if (parsed.data.date < todayStr) {
+          console.log("⚠️ Fecha antigua detectada desde OpenAI:", parsed.data.date);
+          parsed.data.date = "mañana";
+        }
+      }
+
       // Interpretar fecha relativa o absoluta
       let fechaReal = parseRelativeDate(parsed.data.date);
       if (!fechaReal) {
@@ -345,7 +343,11 @@ app.post("/", async (req, res) => {
       }
 
       // Si notify está definido, calculamos notifyAt normalmente
-      let emoji = parsed.data.emoji || getEmojiFromTitle(parsed.data.title);
+      // Elegir emoji por palabra clave en title si no viene o está default
+      let emoji = parsed.data.emoji || "📝";
+      const lowerTitle = parsed.data.title.toLowerCase();
+      const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
+      if (foundEmoji) emoji = foundEmoji;
 
       let notifyAt = eventDate;
       const notifyLower = parsed.data.notify.toLowerCase();
@@ -358,7 +360,7 @@ app.post("/", async (req, res) => {
       } else if (notifyLower.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
         const notifyMatch = notifyLower.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
         if (notifyMatch) {
-          notifyAt = createLocalDate(notifyMatch[1], notifyMatch[2]);
+          notifyAt = new Date(`${notifyMatch[1]}T${notifyMatch[2]}:00`);
         }
       }
 
