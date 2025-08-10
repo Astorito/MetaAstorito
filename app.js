@@ -44,12 +44,12 @@ app.post('/', async (req, res) => {
       const gptResponse = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
-          model: "gpt-4o-mini",
+          model: "gpt-4o",
           messages: [
             { role: "system", content: "Eres un asistente útil que responde de forma clara y breve." },
             { role: "user", content: textMessage }
           ],
-          temperature: 0.7
+          temperature: 0.3
         },
         {
           headers: {
