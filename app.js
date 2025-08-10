@@ -186,8 +186,12 @@ function parseRelativeDate(input) {
   return null;
 }
 
-// --- Manejo del webhook POST ---
+// --- Función auxiliar para formatear fecha y hora tipo "11/08/2025 a las 09:00 AM"
+function formatDateTime(date) {
+  return `${date.toLocaleDateString('es-AR')} a las ${date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+}
 
+// --- Manejo del webhook POST ---
 app.post("/", async (req, res) => {
   console.log(`\n\nWebhook recibido: ${new Date().toISOString()}\n`);
   console.log(JSON.stringify(req.body, null, 2));
@@ -234,15 +238,15 @@ app.post("/", async (req, res) => {
 
       // Calcular notifyAt según notify
       let notifyAt = eventDate;
-      const notify = notifyText;
+      const notifyLower = notifyText;
 
-      if (notify.includes("antes")) {
-        const hoursBefore = parseInt(notify.split(" ")[0]);
+      if (notifyLower.includes("antes")) {
+        const hoursBefore = parseInt(notifyLower.split(" ")[0]);
         if (!isNaN(hoursBefore)) {
           notifyAt = new Date(eventDate.getTime() - hoursBefore * 3600 * 1000);
         }
-      } else if (notify.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
-        const notifyMatch = notify.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
+      } else if (notifyLower.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
+        const notifyMatch = notifyLower.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
         if (notifyMatch) {
           notifyAt = new Date(`${notifyMatch[1]}T${notifyMatch[2]}:00`);
         }
@@ -252,12 +256,11 @@ app.post("/", async (req, res) => {
         notifyAt = new Date(Date.now() + 60 * 1000);
       }
 
-      // Elegir emoji por palabra clave en title si no viene
-      let emoji = partial.emoji;
-      if (!emoji || emoji === "📝") {
-        const lowerTitle = partial.title.toLowerCase();
-        emoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1] || "📝";
-      }
+      // Elegir emoji por palabra clave en title si no viene o está default
+      let emoji = partial.emoji || "📝";
+      const lowerTitle = partial.title.toLowerCase();
+      const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
+      if (foundEmoji) emoji = foundEmoji;
 
       const newReminder = new Reminder({
         phone: from,
@@ -273,10 +276,10 @@ app.post("/", async (req, res) => {
       pendingReminders.delete(from);
 
       await sendWhatsAppMessage(from,
-        `Genial! Ahí guardamos tu evento 🚀\n\n` +
+        `Genial! Ya agendamos tu evento 🚀\n\n` +
         `${emoji} *${partial.title}*\n` +
-        `🗓️ Fecha: ${eventDate.toLocaleDateString()}\n` +
-        `⌛ Aviso: ${notifyAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${notifyAt.toLocaleDateString()}\n\n` +
+        `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
+        `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
         `Avisanos si necesitás que agendemos otro evento!`
       );
 
@@ -319,16 +322,22 @@ app.post("/", async (req, res) => {
       }
 
       // Si notify está definido, calculamos notifyAt normalmente
-      let notifyAt = eventDate;
-      const notify = parsed.data.notify.toLowerCase();
+      // Elegir emoji por palabra clave en title si no viene o está default
+      let emoji = parsed.data.emoji || "📝";
+      const lowerTitle = parsed.data.title.toLowerCase();
+      const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
+      if (foundEmoji) emoji = foundEmoji;
 
-      if (notify.includes("antes")) {
-        const hoursBefore = parseInt(notify.split(" ")[0]);
+      let notifyAt = eventDate;
+      const notifyLower = parsed.data.notify.toLowerCase();
+
+      if (notifyLower.includes("antes")) {
+        const hoursBefore = parseInt(notifyLower.split(" ")[0]);
         if (!isNaN(hoursBefore)) {
           notifyAt = new Date(eventDate.getTime() - hoursBefore * 3600 * 1000);
         }
-      } else if (notify.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
-        const notifyMatch = notify.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
+      } else if (notifyLower.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
+        const notifyMatch = notifyLower.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
         if (notifyMatch) {
           notifyAt = new Date(`${notifyMatch[1]}T${notifyMatch[2]}:00`);
         }
@@ -336,13 +345,6 @@ app.post("/", async (req, res) => {
 
       if (notifyAt < new Date()) {
         notifyAt = new Date(Date.now() + 60 * 1000);
-      }
-
-      // Emoji por palabra clave si no viene
-      let emoji = parsed.data.emoji;
-      if (!emoji || emoji === "📝") {
-        const lowerTitle = parsed.data.title.toLowerCase();
-        emoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1] || "📝";
       }
 
       const newReminder = new Reminder({
@@ -358,10 +360,10 @@ app.post("/", async (req, res) => {
       scheduleReminder(newReminder);
 
       await sendWhatsAppMessage(from,
-        `Genial! Ahí guardamos tu evento 🚀\n\n` +
+        `Genial! Ya agendamos tu evento 🚀\n\n` +
         `${emoji} *${parsed.data.title}*\n` +
-        `🗓️ Fecha: ${eventDate.toLocaleDateString()}\n` +
-        `⌛ Aviso: ${notifyAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${notifyAt.toLocaleDateString()}\n\n` +
+        `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
+        `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
         `Avisanos si necesitás que agendemos otro evento!`
       );
 
