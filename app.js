@@ -10,7 +10,7 @@ app.use(express.json());
 
 // Variables de entorno
 const port = process.env.PORT || 3000;
-const mongoUri = process.env.MONGO_URI;
+const mongoUri = process.env.MONGODB_URI;
 
 // Conexión a MongoDB
 mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
