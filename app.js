@@ -317,8 +317,12 @@ const Event = mongoose.model('Event', EventSchema);
 function createLocalDateTime(dateStr, timeStr) {
   const [year, month, day] = dateStr.split('-').map(Number);
   const [hour, minute] = timeStr.split(':').map(Number);
-  return new Date(year, month - 1, day, hour, minute);
+  return DateTime.fromObject(
+    { year, month, day, hour, minute },
+    { zone: 'America/Argentina/Buenos_Aires' }
+  );
 }
+
 
 // --- Formatear fecha local YYYY-MM-DD para comparar ---
 function formatDateLocal(date) {
@@ -445,6 +449,7 @@ app.post("/", async (req, res) => {
 
       const hora = partial.time || "09:00";
 
+      const eventDate = createLocalDate(fechaReal, hora);
       if (isNaN(eventDate.getTime())) {
         await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
         return res.sendStatus(200);
@@ -509,19 +514,25 @@ app.post("/", async (req, res) => {
     if (parsed.type === "reminder") {
       // Aquí es donde debemos crear la fecha del evento
       const fechaEvento = createLocalDateTime(parsed.data.date, parsed.data.time);
-      console.log(`Fecha y hora del evento (desde OpenAI): ${fechaEvento.toLocaleString()}`);
+console.log(`Fecha y hora del evento (desde OpenAI): ${fechaEvento.toLocaleString(DateTime.DATETIME_SHORT)}`);
 
-      // Calcular notifyAt usando la instrucción de notify de OpenAI
-      let notifyAt;
-      if (parsed.data.notify.includes("antes")) {
-        const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
-        if (match) {
-          const cantidad = parseInt(match[1]);
-          const unidad = match[2].startsWith('hora') ? 3600000 : 60000;
-          notifyAt = new Date(fechaEvento.getTime() - (cantidad * unidad));
-          console.log(`Aviso calculado: ${notifyAt.toLocaleString()}`);
-        }
-      }
+let notifyAt = null;
+if (parsed.data.notify.includes("antes")) {
+  const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
+  if (match) {
+    const cantidad = parseInt(match[1]);
+    const unidad = match[2].startsWith('hora') ? { hours: cantidad } : { minutes: cantidad };
+    notifyAt = fechaEvento.minus(unidad);
+    console.log(`Aviso calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
+  }
+}
+
+// Si no hay notifyAt válido, asignamos un aviso 10 minutos antes como default
+if (!notifyAt) {
+  notifyAt = fechaEvento.minus({ minutes: 10 });
+  console.log(`Aviso por defecto calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
+}
+
 
       // Usar el emoji que viene de OpenAI o buscar uno relacionado
       let emoji = parsed.data.emoji;
@@ -532,13 +543,13 @@ app.post("/", async (req, res) => {
       }
 
       const newReminder = new Reminder({
-        phone: from,
-        title: parsed.data.title,
-        emoji,
-        date: fechaEvento, // Usar fechaEvento aquí
-        notifyAt,
-        sent: false
-      });
+  phone: from,
+  title: parsed.data.title,
+  emoji,
+  date: fechaEvento.toJSDate(),
+  notifyAt: notifyAt.toJSDate(),
+  sent: false
+});
 
       await newReminder.save();
       scheduleReminder(newReminder);
