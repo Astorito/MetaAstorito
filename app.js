@@ -403,11 +403,10 @@ app.get('/', (req, res) => {
     res.status(200).send(challenge);
   } else {
     res.status(403).end();
+  }
 });
+
+// --- Iniciar servidor ---
+app.listen(port, () => {
+  console.log(`Servidor escuchando en puerto ${port}`);
 });
-// --- Verificación webhook ---
-app.get('/', (req, res) => {
-  const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
-  if (mode === 'subscribe' && token === verifyToken) {;
-    console.log('WEBHOOK VERIFIED');
-    res.status(200).send(challenge);  } else {    res.status(403).end();  }});// --- Iniciar servidor ---app.listen(port, () => {  console.log(`Servidor escuchando en puerto ${port}`);});
