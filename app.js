@@ -91,6 +91,7 @@ function capitalizeFirst(str) {
 }
 
 // Modificar el prompt de OpenAI para ser más estricto con fechas y horas
+// Modificar la función parseReminderWithOpenAI para forzar el uso de la hora encontrada
 async function parseReminderWithOpenAI(text) {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
@@ -152,6 +153,31 @@ Analizar este mensaje: "${text}"`;
 
     let parsed = JSON.parse(response.data.choices[0].message.content);
     
+    // Extraer hora del mensaje original
+    const horaPatterns = [
+      /a las (\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)?/i,
+      /(\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)/i,
+      /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i
+    ];
+
+    for (const pattern of horaPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        let h = parseInt(match[1]);
+        const m = match[2] ? match[2].padStart(2, '0') : "00";
+        const period = match[3]?.toLowerCase();
+        
+        if (period === "tarde" || period === "pm") h = (h < 12) ? h + 12 : h;
+        if (period === "noche") h = (h < 12) ? h + 12 : h;
+        if ((period === "mañana" || period === "am") && h === 12) h = 0;
+        if (period === "mañana" && h < 12) h = h; // Mantener hora si es de mañana
+        
+        parsed.data.time = `${h.toString().padStart(2, '0')}:${m}`;
+        console.log(`Hora encontrada en texto original: ${parsed.data.time}`);
+        break;
+      }
+    }
+
     // Validar que la fecha no sea anterior a hoy
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -434,7 +460,7 @@ app.post("/", async (req, res) => {
         `${emoji} ${capitalizeFirst(partial.title)}\n` +
         `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
         `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
-        `Avisanos si necesitás que agendemos otro evento!`
+        `Avisanos si necesitas que agendemos otro evento!`
       );
 
       return res.sendStatus(200);
@@ -444,69 +470,24 @@ app.post("/", async (req, res) => {
     const parsed = await parseReminderWithOpenAI(messageText);
     
     if (parsed.type === "reminder") {
-      // Extraer hora específica del mensaje original - MEJORADO
-      let hora = parsed.data.time || "09:00"; // default
-      
-      // Buscar patrones más específicos primero
-      const horaPatterns = [
-        /a las (\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)?/i,
-        /(\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)/i,
-        /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i
-      ];
-
-      for (const pattern of horaPatterns) {
-        const match = messageText.match(pattern);
-        if (match) {
-          let h = parseInt(match[1]);
-          const m = match[2] ? match[2].padStart(2, '0') : "00";
-          const period = match[3]?.toLowerCase();
-          
-          // Mejorado el manejo de AM/PM y mañana/tarde/noche
-          if (period === "tarde" || period === "pm") h = (h < 12) ? h + 12 : h;
-          if (period === "noche") h = (h < 12) ? h + 12 : h;
-          if ((period === "mañana" || period === "am") && h === 12) h = 0;
-          if (!period && h <= 12) h = h; // Si no especifica, asumimos que es la hora que escribió
-          
-          hora = `${h.toString().padStart(2, '0')}:${m}`;
-          console.log(`Hora extraída y procesada: ${hora}`); // Debug
-          break;
-        }
-      }
-      console.log(`Hora extraída del mensaje: ${hora}`); // Debug
-          
-      // Parsear fecha relativa
       const fechaReal = parseRelativeDate(messageText.includes("mañana") ? "mañana" : parsed.data.date);
       if (!fechaReal) {
         await sendWhatsAppMessage(from, "No pude entender la fecha correctamente.");
         return res.sendStatus(200);
       }
 
-      const eventDate = createLocalDate(fechaReal, hora);
-      // Calcular tiempo de aviso
-      let notifyAt = new Date();
-      const minutosMatch = messageText.match(/en (\d+)\s*minutos?/);
-      const horasMatch = messageText.match(/en (\d+)\s*horas?/);
+      // Usar directamente la hora que viene en parsed.data.time
+      const eventDate = createLocalDate(fechaReal, parsed.data.time);
       
-      if (minutosMatch) {
-        notifyAt = new Date(Date.now() + parseInt(minutosMatch[1]) * 60000);
-      } else if (horasMatch) {
-        notifyAt = new Date(Date.now() + parseInt(horasMatch[1]) * 3600000);
-      } else if (parsed.data.notify.includes("antes")) {
+      // Si el aviso es "X minutos/horas antes", calcularlo desde eventDate
+      let notifyAt = new Date();
+      if (parsed.data.notify.includes("antes")) {
         const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
         if (match) {
           const cantidad = parseInt(match[1]);
           const unidad = match[2].startsWith('hora') ? 3600000 : 60000;
-          // Calcular desde eventDate, no desde now()
           notifyAt = new Date(eventDate.getTime() - (cantidad * unidad));
         }
-      } else {
-        // Intentamos parsear fecha y hora absoluta con chrono
-        const parsedNotify = chrono.es.parseDate(parsed.data.notify);
-        if (parsedNotify) notifyAt = parsedNotify;
-      }
-
-      if (!notifyAt || notifyAt < new Date()) {
-        notifyAt = new Date(Date.now() + 60 * 1000);
       }
 
       // Elegir emoji por palabra clave en title si no viene o está default
