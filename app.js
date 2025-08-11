@@ -2,7 +2,7 @@
 const express = require('express');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const dateparser = require('dateparser');
+const chrono = require('chrono-node');
 require('dotenv').config();
 
 const app = express();
