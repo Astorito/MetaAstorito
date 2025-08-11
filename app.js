@@ -646,6 +646,10 @@ app.post("/", async (req, res) => {
         console.log(`Aviso por defecto calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
       }
 
+      // Usar findBestEmoji para el emoji
+      const emoji = findBestEmoji(parsed.data.title);
+      console.log(`Emoji seleccionado para "${parsed.data.title}": ${emoji}`);
+
       const newReminder = new Reminder({
         phone: from,
         title: parsed.data.title,
