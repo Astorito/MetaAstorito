@@ -306,13 +306,6 @@ function formatDateTime(date) {
     .toFormat("dd/MM/yyyy 'a las' HH:mm");
 }
 
-// Conexión MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => console.log('✅ Conectado a MongoDB'))
-  .catch(err => console.error('❌ Error conectando a MongoDB', err));
-
 // Esquema de eventos
 const EventSchema = new mongoose.Schema({
   title: String,
@@ -452,7 +445,6 @@ app.post("/", async (req, res) => {
       }
 
       const hora = partial.time || "09:00";
-      const eventDate = createLocalDateTime(fechaReal, hora);
 
       if (isNaN(eventDate.getTime())) {
         await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
