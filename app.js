@@ -356,10 +356,6 @@ function findBestEmoji(title) {
   return emojiMap.default;
 }
 
-// Modificar la parte donde se asigna el emoji en el webhook
-// Reemplazar la sección actual de emoji por:
-let emoji = findBestEmoji(parsed.data.title);
-
 // --- Estado temporal para recordatorios pendientes de confirmación de aviso ---
 const pendingReminders = new Map(); // key = phone, value = partial reminder data
 
@@ -649,10 +645,6 @@ app.post("/", async (req, res) => {
         notifyAt = fechaEvento.minus({ minutes: 10 });
         console.log(`Aviso por defecto calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
       }
-
-      // AQUÍ es donde debemos buscar el emoji
-      let emoji = findBestEmoji(parsed.data.title);
-      console.log(`Emoji seleccionado para "${parsed.data.title}": ${emoji}`);
 
       const newReminder = new Reminder({
         phone: from,
