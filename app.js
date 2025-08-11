@@ -152,7 +152,8 @@ Analizar este mensaje: "${text}"`;
     });
 
     let parsed = JSON.parse(response.data.choices[0].message.content);
-    
+    console.log('OpenAI response:', parsed); // Debug
+
     // Extraer hora del mensaje original
     const horaPatterns = [
       /a las (\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)?/i,
@@ -172,8 +173,8 @@ Analizar este mensaje: "${text}"`;
         if ((period === "mañana" || period === "am") && h === 12) h = 0;
         if (period === "mañana" && h < 12) h = h; // Mantener hora si es de mañana
         
-        parsed.data.time = `${h.toString().padStart(2, '0')}:${m}`;
-        console.log(`Hora encontrada en texto original: ${parsed.data.time}`);
+        parsed.time = `${h.toString().padStart(2, '0')}:${m}`; // Cambiado aquí
+        console.log(`Hora encontrada en texto original: ${parsed.time}`);
         break;
       }
     }
@@ -191,7 +192,16 @@ Analizar este mensaje: "${text}"`;
       parsed.date = tomorrow.toISOString().split('T')[0];
     }
 
-    return { type: "reminder", data: parsed };
+    return { 
+      type: "reminder", 
+      data: {
+        title: parsed.title,
+        emoji: parsed.emoji,
+        date: parsed.date,
+        time: parsed.time,
+        notify: parsed.notify
+      }
+    };
   } catch (err) {
     console.error("Error parseando con OpenAI:", err);
     return { type: "error", message: "No pude entender el recordatorio" };
