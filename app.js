@@ -365,11 +365,20 @@ app.post("/", async (req, res) => {
       // Calcular tiempo de aviso
       let notifyAt = new Date();
       const minutosMatch = messageText.match(/en (\d+)\s*minutos?/);
+      const horasMatch = messageText.match(/en (\d+)\s*horas?/);
+      
       if (minutosMatch) {
         notifyAt = new Date(Date.now() + parseInt(minutosMatch[1]) * 60000);
+      } else if (horasMatch) {
+        notifyAt = new Date(Date.now() + parseInt(horasMatch[1]) * 3600000);
+      } else if (parsed.data.notify.includes("antes")) {
+        const horasAntes = parseInt(parsed.data.notify.split(" ")[0]);
+        if (!isNaN(horasAntes)) {
+          notifyAt = new Date(eventDate.getTime() - horasAntes * 3600000);
+        }
       } else {
         // Intentamos parsear fecha y hora absoluta con chrono
-        const parsedNotify = chrono.es.parseDate(notifyText);
+        const parsedNotify = chrono.es.parseDate(parsed.data.notify);
         if (parsedNotify) notifyAt = parsedNotify;
       }
 
