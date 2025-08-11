@@ -209,6 +209,8 @@ function createLocalDate(fechaStr, horaStr) {
 
 // Agrega arriba, junto a otros requires
 const chrono = require('chrono-node');
+const fs = require('fs');
+const FormData = require('form-data');
 
 // --- Manejo del webhook POST ---
 app.post("/", async (req, res) => {
@@ -316,13 +318,21 @@ app.post("/", async (req, res) => {
     const parsed = await parseReminderWithOpenAI(messageText);
 
     if (parsed.type === "reminder") {
-      // Si el usuario escribió "mañana", "hoy", etc, forzamos la fecha con parseRelativeDate
+      // Forzar fecha si es relativa
       let fechaReal = parseRelativeDate(parsed.data.date);
       let eventDate;
       if (fechaReal) {
-        eventDate = createLocalDate(fechaReal, parsed.data.time || "09:00");
+        // Usar la hora que el usuario pidió (si está en el texto original)
+        let hora = parsed.data.time || "09:00";
+        // Si el texto original tiene "a las 10", extraerlo
+        const horaMatch = messageText.match(/a las (\d{1,2})(?::(\d{2}))?/);
+        if (horaMatch) {
+          const h = horaMatch[1].padStart(2, '0');
+          const m = horaMatch[2] ? horaMatch[2].padStart(2, '0') : "00";
+          hora = `${h}:${m}`;
+        }
+        eventDate = createLocalDate(fechaReal, hora);
       } else {
-        // Si OpenAI devolvió una fecha absoluta, la usamos
         eventDate = chrono.es.parseDate(`${parsed.data.date} ${parsed.data.time}`, new Date());
         if (!eventDate) {
           eventDate = createLocalDate(parsed.data.date, parsed.data.time || "09:00");
