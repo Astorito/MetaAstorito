@@ -2,6 +2,7 @@
 const express = require('express');
 const axios = require('axios');
 const mongoose = require('mongoose');
+const { DateTime } = require('luxon');
 require('dotenv').config();
 
 const app = express();
@@ -188,7 +189,8 @@ function parseRelativeDate(input) {
 
 // --- Función auxiliar para formatear fecha y hora tipo "11/08/2025 a las 09:00 AM"
 function formatDateTime(date) {
-  return `${date.toLocaleDateString('es-AR')} a las ${date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+  return DateTime.fromJSDate(date).setZone('America/Argentina/Buenos_Aires')
+    .toFormat("dd/MM/yyyy 'a las' HH:mm");
 }
 
 // --- Formatear fecha local YYYY-MM-DD para comparar ---
