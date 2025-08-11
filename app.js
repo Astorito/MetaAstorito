@@ -77,36 +77,63 @@ async function sendWhatsAppMessage(to, message) {
   }
 }
 
-// --- Modifica el prompt de OpenAI para ser más específico
+// Agregar después de los requires
+const INITIAL_RESPONSES = [
+  "Genial",
+  "Perfecto",
+  "Dale",
+  "Bárbaro"
+];
+
+// Agregar función helper para capitalizar
+function capitalizeFirst(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+// Modificar el prompt de OpenAI para ser más estricto con fechas y horas
 async function parseReminderWithOpenAI(text) {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
   
   const systemPrompt = `Eres un asistente que extrae información de recordatorios en español.
-IMPORTANTE - REGLAS ESTRICTAS:
-1. HOY ES: ${today}
-2. Si el mensaje menciona "hoy", DEBES usar ${today} como fecha
-3. Si menciona una hora específica (ej: "10 de la mañana"), DEBES usar esa hora exacta
-4. NUNCA modifiques la hora mencionada en el mensaje
-5. Si dice "X minutos/horas antes", guarda eso textual en notify
+REGLAS ESTRICTAS PARA FECHAS Y HORAS:
 
-Formato JSON requerido:
+HOY ES: ${today}
+
+1. Si el texto dice "mañana", sumar 1 día a ${today}
+2. Si el texto dice "pasado mañana", sumar 2 días a ${today}
+3. Si menciona fecha específica (ej: "15 de agosto"), usar esa fecha exacta
+4. Si menciona hora específica (ej: "10 de la mañana", "15:30"), usar esa hora exacta
+5. NUNCA modificar la hora mencionada
+6. Si no hay hora específica, usar "09:00"
+7. Si menciona "X minutos/horas antes", guardar eso exacto en "notify"
+
+El resultado DEBE ser un JSON con:
 {
   "title": "título del evento",
   "emoji": "emoji relacionado o 📝",
   "date": "YYYY-MM-DD",
-  "time": "HH:MM en formato 24h",
-  "notify": "instrucción de aviso exacta"
+  "time": "HH:mm",
+  "notify": "instrucción exacta de aviso"
 }
 
-Ejemplo: "hoy a las 10 de la mañana, avisar 30 min antes"
-Respuesta correcta:
+Ejemplos válidos:
+"mañana a las 10 de la mañana" →
 {
   "title": "evento",
   "emoji": "📝",
-  "date": "${today}",
+  "date": "2025-08-12",
   "time": "10:00",
-  "notify": "30 minutos antes"
+  "notify": "sin aviso"
+}
+
+"pasado mañana a las 3 de la tarde" →
+{
+  "title": "evento",
+  "emoji": "📝", 
+  "date": "2025-08-13",
+  "time": "15:00",
+  "notify": "sin aviso"
 }
 
 Analizar este mensaje: "${text}"`;
@@ -403,8 +430,8 @@ app.post("/", async (req, res) => {
       pendingReminders.delete(from);
 
       await sendWhatsAppMessage(from,
-        `Genial! Ya agendamos tu evento 🚀\n\n` +
-        `${emoji} ${partial.title}\n` +
+        `Genial! Ya lo agendamos 🚀\n\n` +
+        `${emoji} ${capitalizeFirst(partial.title)}\n` +
         `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
         `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
         `Avisanos si necesitás que agendemos otro evento!`
@@ -424,7 +451,7 @@ app.post("/", async (req, res) => {
       const horaPatterns = [
         /a las (\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)?/i,
         /(\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)/i,
-        /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i  // Se eliminó la 'e' del final
+        /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i
       ];
 
       for (const pattern of horaPatterns) {
@@ -434,14 +461,14 @@ app.post("/", async (req, res) => {
           const m = match[2] ? match[2].padStart(2, '0') : "00";
           const period = match[3]?.toLowerCase();
           
-          // Ajustar AM/PM
-          if (period === "tarde" && h < 12) h += 12;
-          if (period === "noche" && h < 12) h += 12;
-          if (period === "mañana" && h === 12) h = 0;
-          if (period === "pm" && h < 12) h += 12;
-          if (period === "am" && h === 12) h = 0;
+          // Mejorado el manejo de AM/PM y mañana/tarde/noche
+          if (period === "tarde" || period === "pm") h = (h < 12) ? h + 12 : h;
+          if (period === "noche") h = (h < 12) ? h + 12 : h;
+          if ((period === "mañana" || period === "am") && h === 12) h = 0;
+          if (!period && h <= 12) h = h; // Si no especifica, asumimos que es la hora que escribió
           
           hora = `${h.toString().padStart(2, '0')}:${m}`;
+          console.log(`Hora extraída y procesada: ${hora}`); // Debug
           break;
         }
       }
@@ -501,8 +528,8 @@ app.post("/", async (req, res) => {
       scheduleReminder(newReminder);
 
       await sendWhatsAppMessage(from,
-        "Genial! Ya agendamos tu evento 🚀\n\n" +
-        emoji + " *" + parsed.data.title + "*\n" +
+        `${INITIAL_RESPONSES[Math.floor(Math.random() * INITIAL_RESPONSES.length)]}! Ya lo agendamos 🚀\n\n` +
+        `${emoji} ${capitalizeFirst(parsed.data.title)}\n` +
         `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
         `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
         `Avisanos si necesitás que agendemos otro evento!`
