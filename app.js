@@ -301,7 +301,11 @@ function parseRelativeDate(input) {
 
 // --- Función auxiliar para formatear fecha y hora tipo "11/08/2025 a las 09:00 AM"
 function formatDateTime(date) {
-  return DateTime.fromJSDate(date).setZone('America/Argentina/Buenos_Aires')
+  if (date instanceof Date) {
+    date = DateTime.fromJSDate(date);
+  }
+  return date
+    .setZone('America/Argentina/Buenos_Aires', { keepLocalTime: true })
     .toFormat("dd/MM/yyyy 'a las' HH:mm");
 }
 
@@ -317,10 +321,16 @@ const Event = mongoose.model('Event', EventSchema);
 function createLocalDateTime(dateStr, timeStr) {
   const [year, month, day] = dateStr.split('-').map(Number);
   const [hour, minute] = timeStr.split(':').map(Number);
-  return DateTime.fromObject(
+  
+  console.log(`Creando fecha: ${year}-${month}-${day} ${hour}:${minute}`);
+  
+  const dt = DateTime.fromObject(
     { year, month, day, hour, minute },
     { zone: 'America/Argentina/Buenos_Aires' }
   );
+  
+  console.log(`Fecha creada: ${dt.toISO()}`);
+  return dt;
 }
 
 
@@ -558,8 +568,8 @@ if (!notifyAt) {
       await sendWhatsAppMessage(from,
         `${INITIAL_RESPONSES[Math.floor(Math.random() * INITIAL_RESPONSES.length)]}! Ya lo agendamos 🚀\n\n` +
         `${emoji} ${capitalizeFirst(parsed.data.title)}\n` +
-        `🗓️ Fecha: ${formatDateTime(fechaEvento)}\n` +
-        `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
+        `🗓️ Fecha: ${fechaEvento.toFormat("dd/MM/yyyy 'a las' HH:mm")}\n` +
+        `⌛ Aviso: ${notifyAt.toFormat("dd/MM/yyyy 'a las' HH:mm")}\n\n` +
         `Avisanos si necesitás que agendamos otro evento!`
       );
     } else {
