@@ -339,19 +339,36 @@ app.post("/", async (req, res) => {
     const parsed = await parseReminderWithOpenAI(messageText);
 
     if (parsed.type === "reminder") {
-      // Extraer hora específica del mensaje original
-      let hora = "09:00"; // default
-      const horaMatch = messageText.match(/a las (\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(?:mañana|tarde|noche)?/i);
-      if (horaMatch) {
-        let h = parseInt(horaMatch[1]);
-        const m = horaMatch[2] ? horaMatch[2].padStart(2, '0') : "00";
-        
-        // Ajustar AM/PM si se menciona
-        if (messageText.includes("tarde") && h < 12) h += 12;
-        if (messageText.includes("mañana") && h === 12) h = 0;
-        
-        hora = `${h.toString().padStart(2, '0')}:${m}`;
+      // Extraer hora específica del mensaje original - MEJORADO
+      let hora = parsed.data.time || "09:00"; // default
+      
+      // Buscar patrones más específicos primero
+      const horaPatterns = [
+        /a las (\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)?/i,
+        /(\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)/i,
+        /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i
+      ];
+
+      for (const pattern of horaPatterns) {
+        const match = messageText.match(pattern);
+        if (match) {
+          let h = parseInt(match[1]);
+          const m = match[2] ? match[2].padStart(2, '0') : "00";
+          const period = match[3]?.toLowerCase();
+          
+          // Ajustar AM/PM
+          if (period === "tarde" && h < 12) h += 12;
+          if (period === "noche" && h < 12) h += 12;
+          if (period === "mañana" && h === 12) h = 0;
+          if (period === "pm" && h < 12) h += 12;
+          if (period === "am" && h === 12) h = 0;
+          
+          hora = `${h.toString().padStart(2, '0')}:${m}`;
+          break;
+        }
       }
+
+      console.log(`Hora extraída del mensaje: ${hora}`); // Debug
 
       // Parsear fecha relativa
       const fechaReal = parseRelativeDate(messageText.includes("mañana") ? "mañana" : parsed.data.date);
@@ -361,7 +378,7 @@ app.post("/", async (req, res) => {
       }
 
       const eventDate = createLocalDate(fechaReal, hora);
-
+      
       // Calcular tiempo de aviso
       let notifyAt = new Date();
       const minutosMatch = messageText.match(/en (\d+)\s*minutos?/);
