@@ -317,7 +317,7 @@ async function handleOnboarding(from, messageText) {
 app.post("/", async (req, res) => {
   console.log(`\n\nWebhook recibido: ${new Date().toISOString()}\n`);
   console.log(JSON.stringify(req.body, null, 2));
-  return { message: response, shouldContinue };
+
   try {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
@@ -331,191 +331,178 @@ app.post("/", async (req, res) => {
     }
     console.log(`Mensaje de ${from}: ${messageText}`);
 
-    // Verificar onboarding primerogeText) {
+    // Verificar onboarding primero
     const onboardingResponse = await handleOnboarding(from, messageText);
-    if (onboardingResponse) {00);
+    if (onboardingResponse) {
       await sendWhatsAppMessage(from, onboardingResponse.message);
       if (!onboardingResponse.shouldContinue) {
-        return res.sendStatus(200);: ${messageText}`);
-      }
-    }/ Verificar onboarding primero
-    const onboardingResponse = await handleOnboarding(from, messageText);
-    // Chequear si hay recordatorio pendiente sin notify para este usuario
-    if (pendingReminders.has(from)) { onboardingResponse.message);
-      const partial = pendingReminders.get(from);
         return res.sendStatus(200);
-      // Este mensaje debería ser la respuesta para notify
-      const notifyText = messageText.toLowerCase();
+      }
+    }
 
-      // Guardar notify en el partialendiente sin notify para este usuario
-      partial.notify = notifyText;) {
+    // Chequear si hay recordatorio pendiente sin notify para este usuario
+    if (pendingReminders.has(from)) {
       const partial = pendingReminders.get(from);
-      // Construir fecha real usando parseRelativeDate (tu función que retorna fecha YYYY-MM-DD)
-      const fechaReal = parseRelativeDate(partial.date);fy
-      if (!fechaReal) {= messageText.toLowerCase();
-        await sendWhatsAppMessage(from, "No pude entender la fecha. Por favor escribila en formato YYYY-MM-DD o como 'mañana', 'en 2 días', etc.");
-        return res.sendStatus(200);al
-      }artial.notify = notifyText;
+      const notifyText = messageText.toLowerCase();
+      partial.notify = notifyText;
 
-      // Fecha completa con hora (o default 09:00)Date (tu función que retorna fecha YYYY-MM-DD)
-      const hora = partial.time || "09:00";artial.date);
-      const eventDate = createLocalDate(fechaReal, hora);
+      const fechaReal = parseRelativeDate(partial.date);
+      if (!fechaReal) {
         await sendWhatsAppMessage(from, "No pude entender la fecha. Por favor escribila en formato YYYY-MM-DD o como 'mañana', 'en 2 días', etc.");
+        return res.sendStatus(200);
+      }
+
+      const hora = partial.time || "09:00";
+      const eventDate = createLocalDate(fechaReal, hora);
+
       if (isNaN(eventDate.getTime())) {
         await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
         return res.sendStatus(200);
-      }/ Fecha completa con hora (o default 09:00)
-      const hora = partial.time || "09:00";
-      // Calcular notifyAt usando chrono para interpretar notifyText
-      let notifyAt = null;
-      // Intentamos parsear offset tipo "en 5 minutos", "en 1 hora"
-      const matchMinutos = notifyText.match(/en (\d+)\s*min/); válida. Por favor intenta de nuevo.");
-      const matchHoras = notifyText.match(/en (\d+)\s*hora/);
       }
+
+      // Calcular notifyAt
+      let notifyAt = null;
+      const matchMinutos = notifyText.match(/en (\d+)\s*min/);
+      const matchHoras = notifyText.match(/en (\d+)\s*hora/);
+
       if (matchMinutos) {
         notifyAt = new Date(Date.now() + parseInt(matchMinutos[1]) * 60000);
       } else if (matchHoras) {
         notifyAt = new Date(Date.now() + parseInt(matchHoras[1]) * 3600000);
-      } else if (notifyText.includes("antes")) {(\d+)\s*min/);
-        // Si dice "1 hora antes", "2 horas antes")\s*hora/);
+      } else if (notifyText.includes("antes")) {
         const horasAntes = parseInt(notifyText.split(" ")[0]);
         if (!isNaN(horasAntes)) {
-          notifyAt = new Date(eventDate.getTime() - horasAntes * 3600000););
-        }lse if (matchHoras) {
-      } else {At = new Date(Date.now() + parseInt(matchHoras[1]) * 3600000);
-        // Intentamos parsear fecha y hora absoluta con chrono
-        const parsedNotify = chrono.es.parseDate(notifyText);
-        if (parsedNotify) notifyAt = parsedNotify;it(" ")[0]);
-      } if (!isNaN(horasAntes)) {
           notifyAt = new Date(eventDate.getTime() - horasAntes * 3600000);
-      // Si no pudimos calcular notifyAt o es en el pasado, lo ponemos 1 minuto en el futuro
-      if (!notifyAt || notifyAt < new Date()) {
-        notifyAt = new Date(Date.now() + 60 * 1000);con chrono
-      } const parsedNotify = chrono.es.parseDate(notifyText);
+        }
+      } else {
+        const parsedNotify = chrono.es.parseDate(notifyText);
         if (parsedNotify) notifyAt = parsedNotify;
-      // Elegir emoji por palabra clave en title si no viene o está default
+      }
+
+      if (!notifyAt || notifyAt < new Date()) {
+        notifyAt = new Date(Date.now() + 60 * 1000);
+      }
+
+      // Elegir emoji
       let emoji = partial.emoji || "📝";
-      const lowerTitle = partial.title.toLowerCase();asado, lo ponemos 1 minuto en el futuro
+      const lowerTitle = partial.title.toLowerCase();
       const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
-      if (foundEmoji) emoji = foundEmoji; 60 * 1000);
+      if (foundEmoji) emoji = foundEmoji;
 
       const newReminder = new Reminder({
-        phone: from,i por palabra clave en title si no viene o está default
-        title: partial.title,ji || "📝";
-        emoji,werTitle = partial.title.toLowerCase();
-        date: eventDate, Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
-        notifyAt,oji) emoji = foundEmoji;
-        sent: false
-      });st newReminder = new Reminder({
         phone: from,
+        title: partial.title,
+        emoji,
+        date: eventDate,
+        notifyAt,
+        sent: false
+      });
+
       await newReminder.save();
       scheduleReminder(newReminder);
       pendingReminders.delete(from);
-        notifyAt,
+
       await sendWhatsAppMessage(from,
         `Genial! Ya agendamos tu evento 🚀\n\n` +
-        `${emoji} *${partial.title}*\n` +
+        `${emoji} ${partial.title}\n` +
         `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
         `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
         `Avisanos si necesitás que agendemos otro evento!`
       );
-      await sendWhatsAppMessage(from,
-      return res.sendStatus(200);evento 🚀\n\n` +
-    }   `${emoji} *${partial.title}*\n` +
-        `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
-    // No hay recordatorio pendiente, parseamos normalmente usando OpenAI
+
+      return res.sendStatus(200);
+    }
+
+    // No hay recordatorio pendiente, parseamos con OpenAI
     const parsed = await parseReminderWithOpenAI(messageText);
-      );
+    
     if (parsed.type === "reminder") {
       // Extraer hora específica del mensaje original - MEJORADO
       let hora = parsed.data.time || "09:00"; // default
       
-      // Buscar patrones más específicos primeronormalmente usando OpenAI
-      const horaPatterns = [seReminderWithOpenAI(messageText);
+      // Buscar patrones más específicos primero
+      const horaPatterns = [
         /a las (\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)?/i,
         /(\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)/i,
-        /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/ie original - MEJORADO
-      ];t hora = parsed.data.time || "09:00"; // default
-      
-      for (const pattern of horaPatterns) {imero
+        /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/ie
+      ];
+
+      for (const pattern of horaPatterns) {
         const match = messageText.match(pattern);
-        if (match) {,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)?/i,
-          let h = parseInt(match[1]);de la)?\s*(mañana|tarde|noche)/i,
+        if (match) {
+          let h = parseInt(match[1]);
           const m = match[2] ? match[2].padStart(2, '0') : "00";
           const period = match[3]?.toLowerCase();
           
-          // Ajustar AM/PMf horaPatterns) {
+          // Ajustar AM/PM
           if (period === "tarde" && h < 12) h += 12;
           if (period === "noche" && h < 12) h += 12;
           if (period === "mañana" && h === 12) h = 0;
-          if (period === "pm" && h < 12) h += 12;2, '0') : "00";
+          if (period === "pm" && h < 12) h += 12;
           if (period === "am" && h === 12) h = 0;
           
           hora = `${h.toString().padStart(2, '0')}:${m}`;
-          break;riod === "tarde" && h < 12) h += 12;
-        } if (period === "noche" && h < 12) h += 12;
-      }   if (period === "mañana" && h === 12) h = 0;
-          if (period === "pm" && h < 12) h += 12;
+          break;
+        }
+      }
       console.log(`Hora extraída del mensaje: ${hora}`); // Debug
           
-      // Parsear fecha relativa).padStart(2, '0')}:${m}`;
+      // Parsear fecha relativa
       const fechaReal = parseRelativeDate(messageText.includes("mañana") ? "mañana" : parsed.data.date);
       if (!fechaReal) {
         await sendWhatsAppMessage(from, "No pude entender la fecha correctamente.");
         return res.sendStatus(200);
-      }onsole.log(`Hora extraída del mensaje: ${hora}`); // Debug
+      }
 
       const eventDate = createLocalDate(fechaReal, hora);
-      const fechaReal = parseRelativeDate(messageText.includes("mañana") ? "mañana" : parsed.data.date);
       // Calcular tiempo de aviso
-      let notifyAt = new Date();e(from, "No pude entender la fecha correctamente.");
+      let notifyAt = new Date();
       const minutosMatch = messageText.match(/en (\d+)\s*minutos?/);
       const horasMatch = messageText.match(/en (\d+)\s*horas?/);
       
-      if (minutosMatch) {reateLocalDate(fechaReal, hora);
+      if (minutosMatch) {
         notifyAt = new Date(Date.now() + parseInt(minutosMatch[1]) * 60000);
-      } else if (horasMatch) {iso
+      } else if (horasMatch) {
         notifyAt = new Date(Date.now() + parseInt(horasMatch[1]) * 3600000);
-      } else if (parsed.data.notify.includes("antes")) {*minutos?/);
+      } else if (parsed.data.notify.includes("antes")) {
         const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
         if (match) {
           const cantidad = parseInt(match[1]);
-          const unidad = match[2].startsWith('hora') ? 3600000 : 60000;000);
+          const unidad = match[2].startsWith('hora') ? 3600000 : 60000;
           // Calcular desde eventDate, no desde now()
-          notifyAt = new Date(eventDate.getTime() - (cantidad * unidad));otifyAt = new Date(Date.now() + parseInt(horasMatch[1]) * 3600000);
-          console.log(`Calculando aviso: ${cantidad} ${match[2]} antes de ${eventDate}`);f (parsed.data.notify.includes("antes")) {
-        }os?|horas?)\s*antes/);
+          notifyAt = new Date(eventDate.getTime() - (cantidad * unidad));
+        }
       } else {
         // Intentamos parsear fecha y hora absoluta con chrono
-        const parsedNotify = chrono.es.parseDate(parsed.data.notify);   const unidad = match[2].startsWith('hora') ? 3600000 : 60000;
-        if (parsedNotify) notifyAt = parsedNotify;          // Calcular desde eventDate, no desde now()
-      }() - (cantidad * unidad));
- ${match[2]} antes de ${eventDate}`);
-      if (!notifyAt || notifyAt < new Date()) { }
-        notifyAt = new Date(Date.now() + 60 * 1000);      } else {
+        const parsedNotify = chrono.es.parseDate(parsed.data.notify);
+        if (parsedNotify) notifyAt = parsedNotify;
       }
-Date(parsed.data.notify);
+
+      if (!notifyAt || notifyAt < new Date()) {
+        notifyAt = new Date(Date.now() + 60 * 1000);
+      }
+
       // Elegir emoji por palabra clave en title si no viene o está default
       let emoji = parsed.data.emoji || "📝";
       const lowerTitle = parsed.data.title.toLowerCase();
-      const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];      if (!notifyAt || notifyAt < new Date()) {
-      if (foundEmoji) emoji = foundEmoji; 60 * 1000);
+      const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
+      if (foundEmoji) emoji = foundEmoji;
 
       const newReminder = new Reminder({
-        phone: from,r emoji por palabra clave en title si no viene o está default
-        title: parsed.data.title,.data.emoji || "📝";
-        emoji,Title = parsed.data.title.toLowerCase();
-        date: eventDate,oji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
-        notifyAt,(foundEmoji) emoji = foundEmoji;
+        phone: from,
+        title: parsed.data.title,
+        emoji,
+        date: eventDate,
+        notifyAt,
         sent: false
-      });eminder({
+      });
 
-      await newReminder.save();        title: parsed.data.title,
+      await newReminder.save();
       scheduleReminder(newReminder);
 
       await sendWhatsAppMessage(from,
-        `Genial! Ya agendamos tu evento 🚀\n\n` +
-        `${emoji} *${parsed.data.title}*\n` +
+        "Genial! Ya agendamos tu evento 🚀\n\n" +
+        emoji + " *" + parsed.data.title + "*\n" +
         `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
         `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
         `Avisanos si necesitás que agendemos otro evento!`
@@ -528,25 +515,17 @@ Date(parsed.data.notify);
   } catch (err) {
     console.error("Error:", err?.response?.data || err.message);
   }
+  
   res.sendStatus(200);
 });
 
 // --- Verificación webhook ---
-app.get('/', (req, res) => {.message);
+app.get('/', (req, res) => {
   const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
   if (mode === 'subscribe' && token === verifyToken) {
-    console.log('WEBHOOK VERIFIED');Status(200);
+    console.log('WEBHOOK VERIFIED');
     res.status(200).send(challenge);
   } else {
-    res.status(403).end();--- Verificación webhook ---
-  }app.get('/', (req, res) => {
-}); 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
-e' && token === verifyToken) {
-// --- Iniciar servidor ---
-app.listen(port, () => { res.status(200).send(challenge);
-
-
-});  console.log(`Servidor escuchando en puerto ${port}`);  } else {
     res.status(403).end();
   }
 });
