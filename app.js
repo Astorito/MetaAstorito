@@ -4,7 +4,6 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const { DateTime } = require('luxon');
 require('dotenv').config();
-const fechaEvento = createLocalDateTime(parsed.date, parsed.time);
 const app = express();
 app.use(express.json());
 
@@ -508,9 +507,9 @@ app.post("/", async (req, res) => {
     const parsed = await parseReminderWithOpenAI(messageText);
     
     if (parsed.type === "reminder") {
-      // Usar directamente los datos que devuelve OpenAI
-      const eventDate = createLocalDateTime(parsed.data.date, parsed.data.time);
-      console.log(`Fecha y hora del evento (desde OpenAI): ${eventDate.toLocaleString()}`);
+      // Aquí es donde debemos crear la fecha del evento
+      const fechaEvento = createLocalDateTime(parsed.data.date, parsed.data.time);
+      console.log(`Fecha y hora del evento (desde OpenAI): ${fechaEvento.toLocaleString()}`);
 
       // Calcular notifyAt usando la instrucción de notify de OpenAI
       let notifyAt;
@@ -519,7 +518,7 @@ app.post("/", async (req, res) => {
         if (match) {
           const cantidad = parseInt(match[1]);
           const unidad = match[2].startsWith('hora') ? 3600000 : 60000;
-          notifyAt = new Date(eventDate.getTime() - (cantidad * unidad));
+          notifyAt = new Date(fechaEvento.getTime() - (cantidad * unidad));
           console.log(`Aviso calculado: ${notifyAt.toLocaleString()}`);
         }
       }
@@ -536,7 +535,7 @@ app.post("/", async (req, res) => {
         phone: from,
         title: parsed.data.title,
         emoji,
-        date: eventDate,
+        date: fechaEvento, // Usar fechaEvento aquí
         notifyAt,
         sent: false
       });
@@ -548,7 +547,7 @@ app.post("/", async (req, res) => {
       await sendWhatsAppMessage(from,
         `${INITIAL_RESPONSES[Math.floor(Math.random() * INITIAL_RESPONSES.length)]}! Ya lo agendamos 🚀\n\n` +
         `${emoji} ${capitalizeFirst(parsed.data.title)}\n` +
-        `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
+        `🗓️ Fecha: ${formatDateTime(fechaEvento)}\n` +
         `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
         `Avisanos si necesitás que agendamos otro evento!`
       );
