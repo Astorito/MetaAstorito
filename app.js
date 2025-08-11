@@ -306,6 +306,35 @@ function formatDateTime(date) {
     .toFormat("dd/MM/yyyy 'a las' HH:mm");
 }
 
+// Conexión MongoDB
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => console.log('✅ Conectado a MongoDB'))
+  .catch(err => console.error('❌ Error conectando a MongoDB', err));
+
+// Esquema de eventos
+const EventSchema = new mongoose.Schema({
+  title: String,
+  date: Date,
+  avisoDate: Date
+});
+const Event = mongoose.model('Event', EventSchema);
+
+// Función para crear fecha-hora en zona local exacta
+function createLocalDateTime(dateStr, timeStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hour, minute] = timeStr.split(':').map(Number);
+  return new Date(year, month - 1, day, hour, minute);
+}
+
+// Función para crear fecha-hora en zona local exacta
+function createLocalDateTime(dateStr, timeStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hour, minute] = timeStr.split(':').map(Number);
+  return new Date(year, month - 1, day, hour, minute);
+}
+
 // --- Formatear fecha local YYYY-MM-DD para comparar ---
 function formatDateLocal(date) {
   const yyyy = date.getFullYear();
