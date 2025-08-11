@@ -4,7 +4,7 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const { DateTime } = require('luxon');
 require('dotenv').config();
-
+const fechaEvento = createLocalDateTime(parsed.date, parsed.time);
 const app = express();
 app.use(express.json());
 
