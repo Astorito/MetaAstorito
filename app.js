@@ -61,50 +61,51 @@ async function sendWhatsAppMessage(to, message) {
 
 // --- Función para parsear recordatorio con OpenAI ---
 async function parseReminderWithOpenAI(text) {
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD actual
+  
   const systemPrompt = `Eres un asistente que extrae información de recordatorios en español.
+HOY ES ${today}. Usa esta fecha como referencia para interpretar fechas relativas.
 Devuelve SOLO un JSON con: "title", "emoji", "date" (YYYY-MM-DD), "time" (HH:MM), "notify" (instrucciones para aviso).
+Si el texto menciona "mañana", suma 1 día a la fecha actual.
 Si falta hora usa "09:00".
 Si falta emoji usa "📝".
+IMPORTANTE: La fecha NUNCA puede ser anterior a hoy.
 Ejemplo:
-{"title":"Ir al médico","emoji":"🩺","date":"2025-08-15","time":"14:30","notify":"1 antes"}
+{"title":"Ir al médico","emoji":"🩺","date":"${today}","time":"14:30","notify":"1 hora antes"}
 Devuelve solo JSON puro.
 Mensaje a analizar: "${text}"`;
 
   try {
-    const response = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: text }
-        ],
-        temperature: 0
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${openaiToken}`,
-          "Content-Type": "application/json"
-        }
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: model,
+      messages: [{ role: "system", content: systemPrompt }],
+      temperature: 0.3
+    }, {
+      headers: {
+        'Authorization': `Bearer ${openaiToken}`,
+        'Content-Type': 'application/json'
       }
-    );
+    });
 
-    let content = response.data.choices[0].message.content.trim();
-
-    if (content.startsWith("```")) {
-      content = content.replace(/```json?/, '').replace(/```$/, '').trim();
+    let parsed = JSON.parse(response.data.choices[0].message.content);
+    
+    // Validar que la fecha no sea anterior a hoy
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const parsedDate = new Date(parsed.date);
+    parsedDate.setHours(0,0,0,0);
+    
+    if (parsedDate < today) {
+      // Si la fecha es anterior a hoy, usar mañana
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      parsed.date = tomorrow.toISOString().split('T')[0];
     }
 
-    const reminderData = JSON.parse(content);
-
-    reminderData.emoji = reminderData.emoji || "📝";
-    reminderData.time = reminderData.time || "09:00";
-
-    return { type: "reminder", data: reminderData };
-
+    return { type: "reminder", data: parsed };
   } catch (err) {
-    console.error("Error parseando recordatorio con OpenAI:", err.response?.data || err.message);
-    return { type: "message", content: "No pude entender tu recordatorio." };
+    console.error("Error parseando con OpenAI:", err);
+    return { type: "error", message: "No pude entender el recordatorio" };
   }
 }
 
@@ -161,27 +162,37 @@ function parseRelativeDate(input) {
   input = input.toLowerCase().trim();
   const now = new Date();
 
-  if (input === "hoy") return now.toISOString().slice(0, 10);
+  if (input === "hoy") {
+    return formatDateLocal(now);
+  }
+  
   if (input === "mañana") {
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().slice(0, 10);
+    return formatDateLocal(tomorrow);
   }
+
   // En 2 días, en 3 dias, en 1 semana, etc
   let match = input.match(/en (\d+) (día|dias|días|semana|semanas)/);
   if (match) {
-    const val = parseInt(match[1]);
-    if (isNaN(val)) return null;
+    const num = parseInt(match[1]);
+    const unit = match[2];
     const date = new Date(now);
-    if (match[2].startsWith("dia")) {
-      date.setDate(date.getDate() + val);
-    } else if (match[2].startsWith("semana")) {
-      date.setDate(date.getDate() + val * 7);
+    if (unit.startsWith('semana')) {
+      date.setDate(date.getDate() + (num * 7));
+    } else {
+      date.setDate(date.getDate() + num);
     }
-    return date.toISOString().slice(0, 10);
+    return formatDateLocal(date);
   }
+
   // Si viene en formato YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    const inputDate = new Date(input);
+    if (!isNaN(inputDate.getTime())) {
+      return input;
+    }
+  }
 
   // No pudo interpretar
   return null;
