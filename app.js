@@ -316,8 +316,22 @@ function formatDateLocal(date) {
 
 // --- Crear Date local con fecha + hora (HH:MM) ---
 function createLocalDate(fechaStr, horaStr) {
-  // fechaStr: YYYY-MM-DD, horaStr: HH:MM (24h)
-  return new Date(`${fechaStr}T${horaStr}:00`);
+  console.log(`Creando fecha local con: ${fechaStr} ${horaStr}`); // Debug
+  const [year, month, day] = fechaStr.split('-');
+  const [hours, minutes] = horaStr.split(':');
+  
+  // Crear fecha explícitamente para evitar problemas de timezone
+  const date = new Date(
+    parseInt(year),
+    parseInt(month) - 1, // Mes en JS es 0-based
+    parseInt(day),
+    parseInt(hours),
+    parseInt(minutes),
+    0
+  );
+  
+  console.log(`Fecha creada: ${date.toLocaleString()}`); // Debug
+  return date;
 }
 
 // Agrega arriba, junto a otros requires
@@ -486,17 +500,22 @@ app.post("/", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      // Usar directamente la hora que viene en parsed.data.time
-      const eventDate = createLocalDate(fechaReal, parsed.data.time);
+      console.log(`Usando fecha: ${fechaReal} y hora: ${parsed.data.time}`); // Debug
+
+      // CORRECCIÓN - Asegurarnos de usar la hora de parsed.data.time
+      const eventDate = createLocalDate(fechaReal, parsed.data.time || "09:00");
       
-      // Si el aviso es "X minutos/horas antes", calcularlo desde eventDate
-      let notifyAt = new Date();
+      // Debug para verificar la fecha/hora creada
+      console.log(`Fecha evento creada: ${eventDate.toLocaleString()}`);
+
+      let notifyAt;
       if (parsed.data.notify.includes("antes")) {
         const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
         if (match) {
           const cantidad = parseInt(match[1]);
           const unidad = match[2].startsWith('hora') ? 3600000 : 60000;
           notifyAt = new Date(eventDate.getTime() - (cantidad * unidad));
+          console.log(`Aviso calculado: ${notifyAt.toLocaleString()}`); // Debug
         }
       }
 
