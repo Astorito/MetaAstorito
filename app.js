@@ -494,20 +494,11 @@ app.post("/", async (req, res) => {
     const parsed = await parseReminderWithOpenAI(messageText);
     
     if (parsed.type === "reminder") {
-      const fechaReal = parseRelativeDate(messageText.includes("mañana") ? "mañana" : parsed.data.date);
-      if (!fechaReal) {
-        await sendWhatsAppMessage(from, "No pude entender la fecha correctamente.");
-        return res.sendStatus(200);
-      }
+      // Usar directamente los datos que devuelve OpenAI
+      const eventDate = createLocalDate(parsed.data.date, parsed.data.time);
+      console.log(`Fecha y hora del evento (desde OpenAI): ${eventDate.toLocaleString()}`);
 
-      console.log(`Usando fecha: ${fechaReal} y hora: ${parsed.data.time}`); // Debug
-
-      // CORRECCIÓN - Asegurarnos de usar la hora de parsed.data.time
-      const eventDate = createLocalDate(fechaReal, parsed.data.time || "09:00");
-      
-      // Debug para verificar la fecha/hora creada
-      console.log(`Fecha evento creada: ${eventDate.toLocaleString()}`);
-
+      // Calcular notifyAt usando la instrucción de notify de OpenAI
       let notifyAt;
       if (parsed.data.notify.includes("antes")) {
         const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
@@ -515,15 +506,17 @@ app.post("/", async (req, res) => {
           const cantidad = parseInt(match[1]);
           const unidad = match[2].startsWith('hora') ? 3600000 : 60000;
           notifyAt = new Date(eventDate.getTime() - (cantidad * unidad));
-          console.log(`Aviso calculado: ${notifyAt.toLocaleString()}`); // Debug
+          console.log(`Aviso calculado: ${notifyAt.toLocaleString()}`);
         }
       }
 
-      // Elegir emoji por palabra clave en title si no viene o está default
-      let emoji = parsed.data.emoji || "📝";
-      const lowerTitle = parsed.data.title.toLowerCase();
-      const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
-      if (foundEmoji) emoji = foundEmoji;
+      // Usar el emoji que viene de OpenAI o buscar uno relacionado
+      let emoji = parsed.data.emoji;
+      if (emoji === "📝") {
+        const lowerTitle = parsed.data.title.toLowerCase();
+        const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
+        if (foundEmoji) emoji = foundEmoji;
+      }
 
       const newReminder = new Reminder({
         phone: from,
@@ -537,14 +530,14 @@ app.post("/", async (req, res) => {
       await newReminder.save();
       scheduleReminder(newReminder);
 
+      // Enviar mensaje con los datos exactos de OpenAI
       await sendWhatsAppMessage(from,
         `${INITIAL_RESPONSES[Math.floor(Math.random() * INITIAL_RESPONSES.length)]}! Ya lo agendamos 🚀\n\n` +
         `${emoji} ${capitalizeFirst(parsed.data.title)}\n` +
         `🗓️ Fecha: ${formatDateTime(eventDate)}\n` +
         `⌛ Aviso: ${formatDateTime(notifyAt)}\n\n` +
-        `Avisanos si necesitás que agendemos otro evento!`
+        `Avisanos si necesitás que agendamos otro evento!`
       );
-
     } else {
       // Respuesta normal GPT u otro texto
       await sendWhatsAppMessage(from, parsed.content);
