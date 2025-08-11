@@ -1,4 +1,4 @@
-// Importar dependencias
+// Importar dependencias 
 const express = require('express');
 const axios = require('axios');
 const mongoose = require('mongoose');
@@ -26,7 +26,7 @@ const Event = mongoose.model('Event', new mongoose.Schema({
 
 // Función para formatear fecha y hora en formato "dd/mm/yyyy a las hh:mm AM/PM"
 function formatDateTime(date) {
-  return ${date.toLocaleDateString('es-AR')} a las ${date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: true })};
+  return `${date.toLocaleDateString('es-AR')} a las ${date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 }
 
 // Función para asignar emoji según evento
@@ -87,13 +87,13 @@ function buildEventMessage(eventTitle, eventDate, avisoHorasAntes) {
   const avisoDate = new Date(eventDate);
   avisoDate.setHours(avisoDate.getHours() - avisoHorasAntes);
 
-  return Genial! Ya agendamos tu evento 🚀
+  return `Genial! Ya agendamos tu evento 🚀
 
 ${emoji} ${eventTitle}
 🗓️ Fecha: ${formatDateTime(eventDate)}
 ⌛ Aviso: ${formatDateTime(avisoDate)}
 
-Avisanos si necesitás que agendemos otro evento!;
+Avisanos si necesitás que agendemos otro evento!`;
 }
 
 // Endpoint para recibir mensajes de WhatsApp
@@ -114,17 +114,17 @@ app.post('/webhook', async (req, res) => {
   const respuesta = buildEventMessage(eventTitle, fechaEvento, avisoHoras || 0);
 
   // Ejemplo de envío con WhatsApp Cloud API
-  await axios.post(https://graph.facebook.com/v17.0/${process.env.PHONE_NUMBER_ID}/messages, {
+  await axios.post(`https://graph.facebook.com/v17.0/${process.env.PHONE_NUMBER_ID}/messages`, {
     messaging_product: "whatsapp",
     to: req.body.from,
     text: { body: respuesta }
   }, {
-    headers: { Authorization: Bearer ${process.env.WHATSAPP_TOKEN} }
+    headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` }
   });
 
   res.sendStatus(200);
 });
 
 app.listen(port, () => {
-  console.log(🚀 Servidor corriendo en puerto ${port});
+  console.log(`🚀 Servidor corriendo en puerto ${port}`);
 });
