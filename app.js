@@ -205,6 +205,9 @@ function createLocalDate(fechaStr, horaStr) {
   return new Date(`${fechaStr}T${horaStr}:00`);
 }
 
+// Agrega arriba, junto a otros requires
+const chrono = require('chrono-node');
+
 // --- Manejo del webhook POST ---
 app.post("/", async (req, res) => {
   console.log(`\n\nWebhook recibido: ${new Date().toISOString()}\n`);
@@ -234,39 +237,46 @@ app.post("/", async (req, res) => {
       // Guardar notify en el partial
       partial.notify = notifyText;
 
-      // Construir fecha real
+      // Construir fecha real usando parseRelativeDate (tu función que retorna fecha YYYY-MM-DD)
       const fechaReal = parseRelativeDate(partial.date);
       if (!fechaReal) {
         await sendWhatsAppMessage(from, "No pude entender la fecha. Por favor escribila en formato YYYY-MM-DD o como 'mañana', 'en 2 días', etc.");
         return res.sendStatus(200);
       }
 
-      // Hora o default 09:00
+      // Fecha completa con hora (o default 09:00)
       const hora = partial.time || "09:00";
-      const dateStr = `${fechaReal}T${hora}:00`;
-      const eventDate = new Date(dateStr);
+      const eventDate = createLocalDate(fechaReal, hora);
+
       if (isNaN(eventDate.getTime())) {
         await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
         return res.sendStatus(200);
       }
 
-      // Calcular notifyAt según notify
-      let notifyAt = eventDate;
-      const notifyLower = notifyText;
+      // Calcular notifyAt usando chrono para interpretar notifyText
+      let notifyAt = null;
+      // Intentamos parsear offset tipo "en 5 minutos", "en 1 hora"
+      const matchMinutos = notifyText.match(/en (\d+)\s*min/);
+      const matchHoras = notifyText.match(/en (\d+)\s*hora/);
 
-      if (notifyLower.includes("antes")) {
-        const hoursBefore = parseInt(notifyLower.split(" ")[0]);
-        if (!isNaN(hoursBefore)) {
-          notifyAt = new Date(eventDate.getTime() - hoursBefore * 3600 * 1000);
+      if (matchMinutos) {
+        notifyAt = new Date(Date.now() + parseInt(matchMinutos[1]) * 60000);
+      } else if (matchHoras) {
+        notifyAt = new Date(Date.now() + parseInt(matchHoras[1]) * 3600000);
+      } else if (notifyText.includes("antes")) {
+        // Si dice "1 hora antes", "2 horas antes"
+        const horasAntes = parseInt(notifyText.split(" ")[0]);
+        if (!isNaN(horasAntes)) {
+          notifyAt = new Date(eventDate.getTime() - horasAntes * 3600000);
         }
-      } else if (notifyLower.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
-        const notifyMatch = notifyLower.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
-        if (notifyMatch) {
-          notifyAt = new Date(`${notifyMatch[1]}T${notifyMatch[2]}:00`);
-        }
+      } else {
+        // Intentamos parsear fecha y hora absoluta con chrono
+        const parsedNotify = chrono.es.parseDate(notifyText);
+        if (parsedNotify) notifyAt = parsedNotify;
       }
 
-      if (notifyAt < new Date()) {
+      // Si no pudimos calcular notifyAt o es en el pasado, lo ponemos 1 minuto en el futuro
+      if (!notifyAt || notifyAt < new Date()) {
         notifyAt = new Date(Date.now() + 60 * 1000);
       }
 
@@ -300,37 +310,26 @@ app.post("/", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // No hay recordatorio pendiente, parseamos normalmente
+    // No hay recordatorio pendiente, parseamos normalmente usando OpenAI
     const parsed = await parseReminderWithOpenAI(messageText);
 
     if (parsed.type === "reminder") {
-      // Validar fecha para evitar usar fechas pasadas
-      const todayStr = formatDateLocal(new Date());
-      if (/^\d{4}-\d{2}-\d{2}$/.test(parsed.data.date)) {
-        if (parsed.data.date < todayStr) {
-          console.log("⚠️ Fecha antigua detectada desde OpenAI:", parsed.data.date);
-          parsed.data.date = "mañana";
-        }
+      // Intentar parsear fecha y hora con chrono para mejor precisión
+      let eventDate = chrono.es.parseDate(`${parsed.data.date} ${parsed.data.time}`, new Date());
+
+      // Si chrono falla, usar tu parseRelativeDate + createLocalDate fallback
+      if (!eventDate) {
+        const fechaReal = parseRelativeDate(parsed.data.date);
+        eventDate = createLocalDate(fechaReal, parsed.data.time || "09:00");
       }
 
-      // Interpretar fecha relativa o absoluta
-      let fechaReal = parseRelativeDate(parsed.data.date);
-      if (!fechaReal) {
-        await sendWhatsAppMessage(from, "No pude entender la fecha. Por favor escribila en formato YYYY-MM-DD o como 'mañana', 'en 2 días', etc.");
-        return res.sendStatus(200);
-      }
-
-      // Fecha completa con hora (o default 09:00)
-      const eventDate = createLocalDate(fechaReal, parsed.data.time);
-
-      if (isNaN(eventDate.getTime())) {
+      if (!eventDate || isNaN(eventDate.getTime())) {
         await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
         return res.sendStatus(200);
       }
 
       // Si no se indicó notify, guardar parcialmente y pedir aviso
       if (!parsed.data.notify || parsed.data.notify.trim() === "") {
-        // Guardamos parcialmente para esperar aviso
         pendingReminders.set(from, {
           title: parsed.data.title,
           emoji: parsed.data.emoji || "📝",
@@ -338,35 +337,40 @@ app.post("/", async (req, res) => {
           time: parsed.data.time || "09:00"
         });
 
-        await sendWhatsAppMessage(from, "Perfecto! ¿A qué hora querés que te avise? Por favor decímelo (ejemplo: '1 hora antes', 'a la hora del evento', '2025-08-15 a las 14:00')");
+        await sendWhatsAppMessage(from, "Perfecto! ¿A qué hora querés que te avise? Por favor decímelo (ejemplo: 'en 5 minutos', '1 hora antes', '2025-08-15 a las 14:00')");
         return res.sendStatus(200);
       }
 
-      // Si notify está definido, calculamos notifyAt normalmente
+      // Calcular notifyAt igual que arriba
+      const notifyText = parsed.data.notify.toLowerCase();
+
+      let notifyAt = null;
+      const matchMinutos = notifyText.match(/en (\d+)\s*min/);
+      const matchHoras = notifyText.match(/en (\d+)\s*hora/);
+
+      if (matchMinutos) {
+        notifyAt = new Date(Date.now() + parseInt(matchMinutos[1]) * 60000);
+      } else if (matchHoras) {
+        notifyAt = new Date(Date.now() + parseInt(matchHoras[1]) * 3600000);
+      } else if (notifyText.includes("antes")) {
+        const horasAntes = parseInt(notifyText.split(" ")[0]);
+        if (!isNaN(horasAntes)) {
+          notifyAt = new Date(eventDate.getTime() - horasAntes * 3600000);
+        }
+      } else {
+        const parsedNotify = chrono.es.parseDate(notifyText);
+        if (parsedNotify) notifyAt = parsedNotify;
+      }
+
+      if (!notifyAt || notifyAt < new Date()) {
+        notifyAt = new Date(Date.now() + 60 * 1000);
+      }
+
       // Elegir emoji por palabra clave en title si no viene o está default
       let emoji = parsed.data.emoji || "📝";
       const lowerTitle = parsed.data.title.toLowerCase();
       const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
       if (foundEmoji) emoji = foundEmoji;
-
-      let notifyAt = eventDate;
-      const notifyLower = parsed.data.notify.toLowerCase();
-
-      if (notifyLower.includes("antes")) {
-        const hoursBefore = parseInt(notifyLower.split(" ")[0]);
-        if (!isNaN(hoursBefore)) {
-          notifyAt = new Date(eventDate.getTime() - hoursBefore * 3600 * 1000);
-        }
-      } else if (notifyLower.match(/\d{4}-\d{2}-\d{2} a las \d{2}:\d{2}/)) {
-        const notifyMatch = notifyLower.match(/(\d{4}-\d{2}-\d{2}) a las (\d{2}:\d{2})/);
-        if (notifyMatch) {
-          notifyAt = new Date(`${notifyMatch[1]}T${notifyMatch[2]}:00`);
-        }
-      }
-
-      if (notifyAt < new Date()) {
-        notifyAt = new Date(Date.now() + 60 * 1000);
-      }
 
       const newReminder = new Reminder({
         phone: from,
