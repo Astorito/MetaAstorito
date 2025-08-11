@@ -61,19 +61,31 @@ async function sendWhatsAppMessage(to, message) {
 
 // --- Función para parsear recordatorio con OpenAI ---
 async function parseReminderWithOpenAI(text) {
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD actual
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
   
   const systemPrompt = `Eres un asistente que extrae información de recordatorios en español.
-HOY ES ${today}. Usa esta fecha como referencia para interpretar fechas relativas.
-Devuelve SOLO un JSON con: "title", "emoji", "date" (YYYY-MM-DD), "time" (HH:MM), "notify" (instrucciones para aviso).
-Si el texto menciona "mañana", suma 1 día a la fecha actual.
-Si falta hora usa "09:00".
-Si falta emoji usa "📝".
-IMPORTANTE: La fecha NUNCA puede ser anterior a hoy.
-Ejemplo:
-{"title":"Ir al médico","emoji":"🩺","date":"${today}","time":"14:30","notify":"1 hora antes"}
-Devuelve solo JSON puro.
-Mensaje a analizar: "${text}"`;
+CONTEXTO IMPORTANTE:
+- HOY ES: ${today}
+- HORA ACTUAL: ${now.getHours()}:${now.getMinutes()}
+- Si dice "mañana", la fecha debe ser ${formatDateLocal(new Date(now.getTime() + 86400000))}
+
+REGLAS:
+1. Si menciona una hora específica (ej: "a las 10"), usa esa hora exacta
+2. Si dice "mañana", usa la fecha de mañana (no más)
+3. Si dice "en X minutos", el aviso debe ser hora_actual + X minutos
+4. Nunca modifiques la hora que el usuario especifica
+
+Formato JSON requerido:
+{
+  "title": "título del evento",
+  "emoji": "emoji relacionado o 📝",
+  "date": "YYYY-MM-DD",
+  "time": "HH:MM",
+  "notify": "instrucción de aviso exacta del usuario"
+}
+
+Analizar este mensaje: "${text}"`;
 
   try {
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
@@ -159,13 +171,11 @@ const pendingReminders = new Map(); // key = phone, value = partial reminder dat
 
 // --- Función para parsear fechas relativas simples ---
 function parseRelativeDate(input) {
-  input = input.toLowerCase().trim();
   const now = new Date();
-
-  if (input === "hoy") {
-    return formatDateLocal(now);
-  }
   
+  if (typeof input !== 'string') return null;
+  input = input.toLowerCase().trim();
+
   if (input === "mañana") {
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -329,48 +339,36 @@ app.post("/", async (req, res) => {
     const parsed = await parseReminderWithOpenAI(messageText);
 
     if (parsed.type === "reminder") {
-      // Forzar fecha si es relativa
-      let fechaReal = parseRelativeDate(parsed.data.date);
-      let eventDate;
-      if (fechaReal) {
-        // Usar la hora que el usuario pidió (si está en el texto original)
-        let hora = parsed.data.time || "09:00";
-        // Si el texto original tiene "a las 10", extraerlo
-        const horaMatch = messageText.match(/a las (\d{1,2})(?::(\d{2}))?/);
-        if (horaMatch) {
-          const h = horaMatch[1].padStart(2, '0');
-          const m = horaMatch[2] ? horaMatch[2].padStart(2, '0') : "00";
-          hora = `${h}:${m}`;
-        }
-        eventDate = createLocalDate(fechaReal, hora);
-      } else {
-        eventDate = chrono.es.parseDate(`${parsed.data.date} ${parsed.data.time}`, new Date());
-        if (!eventDate) {
-          eventDate = createLocalDate(parsed.data.date, parsed.data.time || "09:00");
-        }
+      // Extraer hora específica del mensaje original
+      let hora = "09:00"; // default
+      const horaMatch = messageText.match(/a las (\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(?:mañana|tarde|noche)?/i);
+      if (horaMatch) {
+        let h = parseInt(horaMatch[1]);
+        const m = horaMatch[2] ? horaMatch[2].padStart(2, '0') : "00";
+        
+        // Ajustar AM/PM si se menciona
+        if (messageText.includes("tarde") && h < 12) h += 12;
+        if (messageText.includes("mañana") && h === 12) h = 0;
+        
+        hora = `${h.toString().padStart(2, '0')}:${m}`;
       }
 
-      if (!eventDate || isNaN(eventDate.getTime())) {
-        await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
+      // Parsear fecha relativa
+      const fechaReal = parseRelativeDate(messageText.includes("mañana") ? "mañana" : parsed.data.date);
+      if (!fechaReal) {
+        await sendWhatsAppMessage(from, "No pude entender la fecha correctamente.");
         return res.sendStatus(200);
       }
 
-      // Calcular notifyAt
-      const notifyText = parsed.data.notify.toLowerCase();
-      let notifyAt = null;
-      const matchMinutos = notifyText.match(/en (\d+)\s*min/);
-      const matchHoras = notifyText.match(/en (\d+)\s*hora/);
+      const eventDate = createLocalDate(fechaReal, hora);
 
-      if (matchMinutos) {
-        notifyAt = new Date(Date.now() + parseInt(matchMinutos[1]) * 60000);
-      } else if (matchHoras) {
-        notifyAt = new Date(Date.now() + parseInt(matchHoras[1]) * 3600000);
-      } else if (notifyText.includes("antes")) {
-        const horasAntes = parseInt(notifyText.split(" ")[0]);
-        if (!isNaN(horasAntes)) {
-          notifyAt = new Date(eventDate.getTime() - horasAntes * 3600000);
-        }
+      // Calcular tiempo de aviso
+      let notifyAt = new Date();
+      const minutosMatch = messageText.match(/en (\d+)\s*minutos?/);
+      if (minutosMatch) {
+        notifyAt = new Date(Date.now() + parseInt(minutosMatch[1]) * 60000);
       } else {
+        // Intentamos parsear fecha y hora absoluta con chrono
         const parsedNotify = chrono.es.parseDate(notifyText);
         if (parsedNotify) notifyAt = parsedNotify;
       }
