@@ -328,13 +328,6 @@ function createLocalDateTime(dateStr, timeStr) {
   return new Date(year, month - 1, day, hour, minute);
 }
 
-// Función para crear fecha-hora en zona local exacta
-function createLocalDateTime(dateStr, timeStr) {
-  const [year, month, day] = dateStr.split('-').map(Number);
-  const [hour, minute] = timeStr.split(':').map(Number);
-  return new Date(year, month - 1, day, hour, minute);
-}
-
 // --- Formatear fecha local YYYY-MM-DD para comparar ---
 function formatDateLocal(date) {
   const yyyy = date.getFullYear();
@@ -459,7 +452,7 @@ app.post("/", async (req, res) => {
       }
 
       const hora = partial.time || "09:00";
-      const eventDate = createLocalDate(fechaReal, hora);
+      const eventDate = createLocalDateTime(fechaReal, hora);
 
       if (isNaN(eventDate.getTime())) {
         await sendWhatsAppMessage(from, "La fecha u hora no es válida. Por favor intenta de nuevo.");
@@ -524,7 +517,7 @@ app.post("/", async (req, res) => {
     
     if (parsed.type === "reminder") {
       // Usar directamente los datos que devuelve OpenAI
-      const eventDate = createLocalDate(parsed.data.date, parsed.data.time);
+      const eventDate = createLocalDateTime(parsed.data.date, parsed.data.time);
       console.log(`Fecha y hora del evento (desde OpenAI): ${eventDate.toLocaleString()}`);
 
       // Calcular notifyAt usando la instrucción de notify de OpenAI
