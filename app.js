@@ -632,47 +632,40 @@ app.post("/", async (req, res) => {
     if (parsed.type === "reminder") {
       // Aquí es donde debemos crear la fecha del evento
       const fechaEvento = createLocalDateTime(parsed.data.date, parsed.data.time);
-console.log(`Fecha y hora del evento (desde OpenAI): ${fechaEvento.toLocaleString(DateTime.DATETIME_SHORT)}`);
+      console.log(`Fecha y hora del evento (desde OpenAI): ${fechaEvento.toLocaleString(DateTime.DATETIME_SHORT)}`);
 
-let notifyAt = null;
-if (parsed.data.notify.includes("antes")) {
-  const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
-  if (match) {
-    const cantidad = parseInt(match[1]);
-    const unidad = match[2].startsWith('hora') ? { hours: cantidad } : { minutes: cantidad };
-    notifyAt = fechaEvento.minus(unidad);
-    console.log(`Aviso calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
-  }
-}
-
-// Si no hay notifyAt válido, asignamos un aviso 10 minutos antes como default
-if (!notifyAt) {
-  notifyAt = fechaEvento.minus({ minutes: 10 });
-  console.log(`Aviso por defecto calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
-}
-
-
-      // Usar el emoji que viene de OpenAI o buscar uno relacionado
-      let emoji = parsed.data.emoji;
-      if (emoji === "📝") {
-        const lowerTitle = parsed.data.title.toLowerCase();
-        const foundEmoji = Object.entries(emojiMap).find(([key]) => lowerTitle.includes(key))?.[1];
-        if (foundEmoji) emoji = foundEmoji;
+      let notifyAt = null;
+      if (parsed.data.notify.includes("antes")) {
+        const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
+        if (match) {
+          const cantidad = parseInt(match[1]);
+          const unidad = match[2].startsWith('hora') ? { hours: cantidad } : { minutes: cantidad };
+          notifyAt = fechaEvento.minus(unidad);
+          console.log(`Aviso calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
+        }
       }
 
+      if (!notifyAt) {
+        notifyAt = fechaEvento.minus({ minutes: 10 });
+        console.log(`Aviso por defecto calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
+      }
+
+      // AQUÍ es donde debemos buscar el emoji
+      let emoji = findBestEmoji(parsed.data.title);
+      console.log(`Emoji seleccionado para "${parsed.data.title}": ${emoji}`);
+
       const newReminder = new Reminder({
-  phone: from,
-  title: parsed.data.title,
-  emoji,
-  date: fechaEvento.toJSDate(),
-  notifyAt: notifyAt.toJSDate(),
-  sent: false
-});
+        phone: from,
+        title: parsed.data.title,
+        emoji,
+        date: fechaEvento.toJSDate(),
+        notifyAt: notifyAt.toJSDate(),
+        sent: false
+      });
 
       await newReminder.save();
       scheduleReminder(newReminder);
 
-      // Enviar mensaje con los datos exactos de OpenAI
       await sendWhatsAppMessage(from,
         `${INITIAL_RESPONSES[Math.floor(Math.random() * INITIAL_RESPONSES.length)]}! Ya lo agendamos 🚀\n\n` +
         `${emoji} ${capitalizeFirst(parsed.data.title)}\n` +
