@@ -17,8 +17,6 @@ mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ Conectado a MongoDB"))
   .catch(err => console.error("❌ Error conectando a MongoDB", err));
 
-const chrono = require('chrono-node');
-
 // Parsear una fecha relativa en español
 const fecha = chrono.es.parseDate("mañana a las 11");
 console.log(fecha);
