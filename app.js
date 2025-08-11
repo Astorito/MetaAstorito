@@ -29,6 +29,24 @@ const reminderSchema = new mongoose.Schema({
 });
 const Reminder = mongoose.model('Reminder', reminderSchema);
 
+// --- Esquema y modelo MongoDB para usuarios ---
+const userSchema = new mongoose.Schema({
+  phone: { type: String, unique: true },
+  name: String,
+  email: String,
+  onboardingState: {
+    currentStep: { 
+      type: String, 
+      enum: ['welcome', 'ask_name', 'ask_email', 'completed'],
+      default: 'welcome'
+    },
+    completed: { type: Boolean, default: false }
+  },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+
 // --- Conectar a MongoDB ---
 mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ Conectado a MongoDB"))
@@ -68,22 +86,21 @@ async function parseReminderWithOpenAI(text) {
 CONTEXTO IMPORTANTE:
 - HOY ES: ${today}
 - HORA ACTUAL: ${now.getHours()}:${now.getMinutes()}
-- Si dice "mañana", la fecha debe ser ${formatDateLocal(new Date(now.getTime() + 86400000))}
-
-REGLAS:
-1. Si menciona una hora específica (ej: "a las 10"), usa esa hora exacta
-2. Si dice "mañana", usa la fecha de mañana (no más)
-3. Si dice "en X minutos", el aviso debe ser hora_actual + X minutos
-4. Nunca modifiques la hora que el usuario especifica
+- NUNCA modifiques la hora que el usuario especifica
+- Si dice "hoy", usa la fecha ${today}
+- Si dice "a las X", usa esa hora exacta
+- Si dice "X minutos/horas antes", calcula desde la hora del evento
 
 Formato JSON requerido:
 {
   "title": "título del evento",
   "emoji": "emoji relacionado o 📝",
   "date": "YYYY-MM-DD",
-  "time": "HH:MM",
+  "time": "HH:MM en formato 24h",
   "notify": "instrucción de aviso exacta del usuario"
 }
+
+Ejemplo: Si son las 9:00 y dice "a las 10, avisar 30 min antes", time debe ser "10:00" y notify "30 minutos antes"
 
 Analizar este mensaje: "${text}"`;
 
@@ -176,6 +193,10 @@ function parseRelativeDate(input) {
   if (typeof input !== 'string') return null;
   input = input.toLowerCase().trim();
 
+  if (input === "hoy") {  // Agregar manejo de "hoy"
+    return formatDateLocal(now);
+  }
+
   if (input === "mañana") {
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -233,6 +254,58 @@ const chrono = require('chrono-node');
 const fs = require('fs');
 const FormData = require('form-data');
 
+// --- Función para manejar onboarding ---
+async function handleOnboarding(from, messageText) {
+  // Buscar o crear usuario
+  let user = await User.findOne({ phone: from });
+  if (!user) {
+    user = new User({ phone: from });
+    await user.save();
+  }
+
+  // Si ya completó onboarding, retornar null
+  if (user.onboardingState.completed) {
+    return null;
+  }
+
+  let response;
+  let shouldContinue = true;
+
+  switch (user.onboardingState.currentStep) {
+    case 'welcome':
+      response = "¡Hola! Soy Astorito, ¡qué bueno verte por acá! 👋\n\nPara empezar, ¿podrías decirme tu nombre?";
+      user.onboardingState.currentStep = 'ask_name';
+      break;
+
+    case 'ask_name':
+      user.name = messageText.trim();
+      user.onboardingState.currentStep = 'ask_email';
+      response = "¡Gracias! Ahora, ¿podrías compartirme tu correo electrónico?";
+      break;
+
+    case 'ask_email':
+      // Validación simple de email
+      if (messageText.includes('@')) {
+        user.email = messageText.trim();
+        user.onboardingState.currentStep = 'completed';
+        user.onboardingState.completed = true;
+        response = `¡Perfecto ${user.name}! 🌟 Déjame contarte en qué puedo ayudarte:\n\n` +
+          "⿡ Puedo crear recordatorios para tus eventos y tareas importantes\n" +
+          "⿣ Puedo procesar mensajes de voz si prefieres hablar en lugar de escribir\n\n" +
+          "Ademas tenemos Astorito Quiz todos los miercoles, donde podes jugar por premios contra todos tus amigos 🎮\n\n" +
+          "Perooo si necesitas un Astorito más poderoso, lo buscas por acá https://astorito.ai donde podés suscribirte a Astorito Todopoderoso, con mil funciones nuevas para que descubras. \n\n" +
+          "Un abrazo de carpincho 🦫 y te espero para charlar!\n\n";
+        shouldContinue = false;
+      } else {
+        response = "Por favor, ingresa un correo electrónico válido";
+      }
+      break;
+  }
+
+  await user.save();
+  return { message: response, shouldContinue };
+}
+
 // --- Manejo del webhook POST ---
 app.post("/", async (req, res) => {
   console.log(`\n\nWebhook recibido: ${new Date().toISOString()}\n`);
@@ -251,6 +324,15 @@ app.post("/", async (req, res) => {
     }
 
     console.log(`Mensaje de ${from}: ${messageText}`);
+
+    // Verificar onboarding primero
+    const onboardingResponse = await handleOnboarding(from, messageText);
+    if (onboardingResponse) {
+      await sendWhatsAppMessage(from, onboardingResponse.message);
+      if (!onboardingResponse.shouldContinue) {
+        return res.sendStatus(200);
+      }
+    }
 
     // Chequear si hay recordatorio pendiente sin notify para este usuario
     if (pendingReminders.has(from)) {
@@ -389,9 +471,11 @@ app.post("/", async (req, res) => {
       } else if (horasMatch) {
         notifyAt = new Date(Date.now() + parseInt(horasMatch[1]) * 3600000);
       } else if (parsed.data.notify.includes("antes")) {
-        const horasAntes = parseInt(parsed.data.notify.split(" ")[0]);
-        if (!isNaN(horasAntes)) {
-          notifyAt = new Date(eventDate.getTime() - horasAntes * 3600000);
+        const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
+        if (match) {
+          const cantidad = parseInt(match[1]);
+          const unidad = match[2].startsWith('hora') ? 3600000 : 60000;
+          notifyAt = new Date(eventDate.getTime() - (cantidad * unidad));
         }
       } else {
         // Intentamos parsear fecha y hora absoluta con chrono
