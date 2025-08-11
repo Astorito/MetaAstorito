@@ -424,7 +424,7 @@ app.post("/", async (req, res) => {
       const horaPatterns = [
         /a las (\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)?/i,
         /(\d{1,2})(?::(\d{2}))?\s*(?:de la)?\s*(mañana|tarde|noche)/i,
-        /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/ie
+        /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i  // Se eliminó la 'e' del final
       ];
 
       for (const pattern of horaPatterns) {
