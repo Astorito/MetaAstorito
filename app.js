@@ -92,6 +92,23 @@ function capitalizeFirst(str) {
 // Modificar el prompt de OpenAI para ser más estricto con fechas y horas
 // Modificar la función parseReminderWithOpenAI para forzar el uso de la hora encontrada
 async function parseReminderWithOpenAI(text) {
+  // Primero verificar si parece un recordatorio
+  const reminderKeywords = [
+    'recordar', 'recordame', 'avisame', 'agenda', 'agendar',
+    'mañana', 'hoy', 'siguiente', 'proximo', 'próximo',
+    'reunión', 'reunion', 'cita', 'evento',
+    'a las', 'el dia', 'el día'
+  ];
+
+  const hasReminderKeywords = reminderKeywords.some(keyword => 
+    text.toLowerCase().includes(keyword)
+  );
+
+  if (!hasReminderKeywords) {
+    // Si no parece recordatorio, usar GPT para respuesta general
+    return await getGPTResponse(text);
+  }
+
   const now = new Date();
   const today = now.toISOString().split('T')[0];
   
@@ -238,19 +255,110 @@ initScheduledReminders();
 
 // --- Diccionario simple para emojis por palabra clave ---
 const emojiMap = {
-  peluqueria: "✂️",
-  corte: "✂️",
-  doctor: "🩺",
-  medico: "🩺",
-  odontologo: "🦷",
-  cumpleaños: "🎂",
-  cumple: "🎉",
-  reunion: "📅",
-  gimnasio: "🏋️‍♂️",
-  clase: "📚",
-  cita: "📌",
-  default: "📝",
+  // Salud
+  "doctor": "👨‍⚕️",
+  "medico": "👨‍⚕️",
+  "hospital": "🏥",
+  "dentista": "🦷",
+  "odontologo": "🦷",
+  "farmacia": "💊",
+  "analisis": "🔬",
+  "estudio": "🔬",
+
+  // Belleza
+  "peluqueria": "💇‍♂️",
+  "corte": "✂️",
+  "manicura": "💅",
+  "spa": "💆‍♂️",
+
+  // Eventos sociales
+  "cumpleaños": "🎂",
+  "cumple": "🎉",
+  "fiesta": "🎈",
+  "casamiento": "💒",
+  "boda": "💒",
+  "aniversario": "💑",
+
+  // Trabajo
+  "reunion": "👥",
+  "meeting": "💼",
+  "entrevista": "🤝",
+  "trabajo": "💼",
+  "oficina": "🏢",
+  "llamada": "📞",
+
+  // Educación
+  "clase": "📚",
+  "estudio": "📖",
+  "examen": "📝",
+  "curso": "👨‍🏫",
+  "escuela": "🏫",
+  "universidad": "🎓",
+
+  // Compras y mandados
+  "super": "🛒",
+  "supermercado": "🛒",
+  "compras": "🛍️",
+  "shopping": "🏬",
+  "mercado": "🏪",
+
+  // Deportes y salud
+  "gimnasio": "🏋️‍♂️",
+  "gym": "💪",
+  "futbol": "⚽",
+  "natacion": "🏊‍♂️",
+  "yoga": "🧘‍♂️",
+  "entreno": "🎯",
+
+  // Transporte
+  "vuelo": "✈️",
+  "viaje": "🧳",
+  "tren": "🚂",
+  "auto": "🚗",
+  "mecanico": "🔧",
+
+  // Hogar
+  "limpieza": "🧹",
+  "reparacion": "🔨",
+  "mudanza": "📦",
+  "jardin": "🌱",
+
+  // Social
+  "cita": "💕",
+  "cafe": "☕",
+  "almuerzo": "🍽️",
+  "cena": "🍷",
+  "bar": "🍻",
+  "restaurante": "🍴",
+
+  // Por defecto si no encuentra match
+  "default": "📅"
 };
+
+// Agregar esta nueva función para análisis semántico del título
+function findBestEmoji(title) {
+  const words = title.toLowerCase().split(/\s+/);
+  
+  // Primero buscar matches exactos
+  for (const word of words) {
+    if (emojiMap[word]) {
+      return emojiMap[word];
+    }
+  }
+  
+  // Luego buscar palabras que contengan las keys
+  for (const [key, emoji] of Object.entries(emojiMap)) {
+    if (words.some(word => word.includes(key) || key.includes(word))) {
+      return emoji;
+    }
+  }
+  
+  return emojiMap.default;
+}
+
+// Modificar la parte donde se asigna el emoji en el webhook
+// Reemplazar la sección actual de emoji por:
+let emoji = findBestEmoji(parsed.data.title);
 
 // --- Estado temporal para recordatorios pendientes de confirmación de aviso ---
 const pendingReminders = new Map(); // key = phone, value = partial reminder data
@@ -573,7 +681,7 @@ if (!notifyAt) {
         `Avisanos si necesitás que agendamos otro evento!`
       );
     } else {
-      // Respuesta normal GPT u otro texto
+      // Respuesta de GPT u otro texto
       await sendWhatsAppMessage(from, parsed.content);
     }
   } catch (err) {
