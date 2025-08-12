@@ -111,15 +111,15 @@ async function parseReminderWithOpenAI(text) {
 
   try {
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const currentDate = now.toISOString().split('T')[0]; // Cambiado today por currentDate
     
     const systemPrompt = `Eres un asistente que extrae información de recordatorios en español.
 REGLAS ESTRICTAS PARA FECHAS Y HORAS:
 
-HOY ES: ${today}
+HOY ES: ${currentDate}
 
-1. Si el texto dice "mañana", sumar 1 día a ${today}
-2. Si el texto dice "pasado mañana", sumar 2 días a ${today}
+1. Si el texto dice "mañana", sumar 1 día a ${currentDate}
+2. Si el texto dice "pasado mañana", sumar 2 días a ${currentDate}
 3. Si menciona fecha específica (ej: "15 de agosto"), usar esa fecha exacta
 4. Si menciona hora específica (ej: "10 de la mañana", "15:30"), usar esa hora exacta
 5. NUNCA modificar la hora mencionada
@@ -196,7 +196,7 @@ Analizar este mensaje: "${text}"`;
     }
 
     // Validar que la fecha no sea anterior a hoy
-    const today = new Date();
+    const today = new Date(); // Esta declaración está bien aquí
     today.setHours(0,0,0,0);
     const parsedDate = new Date(parsed.date);
     parsedDate.setHours(0,0,0,0);
