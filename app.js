@@ -104,8 +104,8 @@ async function parseReminderWithOpenAI(text) {
     text.toLowerCase().includes(keyword)
   );
 
+  // Si no parece recordatorio, usar getGPTResponse directamente
   if (!hasReminderKeywords) {
-    // Si no parece recordatorio, usar GPT para respuesta general
     return await getGPTResponse(text);
   }
 
@@ -669,9 +669,10 @@ app.post("/", async (req, res) => {
         `⌛ Aviso: ${notifyAt.toFormat("dd/MM/yyyy 'a las' HH:mm")}\n\n` +
         `Avisanos si necesitás que agendamos otro evento!`
       );
-    } else {
-      // Respuesta de GPT u otro texto
+    } else if (parsed.type === "chat") {
       await sendWhatsAppMessage(from, parsed.content);
+    } else if (parsed.type === "error") {
+      await sendWhatsAppMessage(from, "Lo siento, no pude procesar tu consulta. ¿Podrías reformularla?");
     }
   } catch (err) {
     console.error("Error:", err?.response?.data || err.message);
