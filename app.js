@@ -586,13 +586,45 @@ app.post("/", async (req, res) => {
     const changes = entry?.changes?.[0];
     const message = changes?.value?.messages?.[0];
     const from = message?.from;
-    const messageText = message?.text?.body;
 
-    if (!message || !from || !messageText) {
+    if (!message || !from) {
       console.log("No hay mensaje válido");
       return res.sendStatus(200);
     }
-    console.log(`Mensaje de ${from}: ${messageText}`);
+
+    // Verificar si es un mensaje de audio
+    const audioMsg = message?.audio;
+    if (audioMsg) {
+      try {
+        console.log('Procesando mensaje de audio...');
+        const audioPath = await downloadWhatsAppAudio(audioMsg.id);
+        console.log('Audio descargado en:', audioPath);
+        
+        const transcription = await transcribeWithWhisper(audioPath);
+        console.log('Transcripción:', transcription);
+        
+        // Procesar la transcripción como si fuera un mensaje de texto
+        const parsed = await parseReminderWithOpenAI(transcription);
+        
+        // Procesar el resultado
+        await handleParsedResponse(parsed, from);
+        
+        // Limpiar archivo temporal
+        fs.unlinkSync(audioPath);
+        return res.sendStatus(200);
+      } catch (err) {
+        console.error('Error procesando audio:', err);
+        await sendWhatsAppMessage(from, 'Lo siento, no pude procesar el audio. ¿Podrías intentar con un mensaje de texto?');
+        return res.sendStatus(200);
+      }
+    }
+
+    // Si no es audio, procesar como mensaje de texto
+    const messageText = message?.text?.body;
+    if (!messageText) {
+      console.log("No hay texto en el mensaje");
+      return res.sendStatus(200);
+    }
 
     // Verificar onboarding primero
     const onboardingResponse = await handleOnboarding(from, messageText);
@@ -804,60 +836,64 @@ if (audioMsg) {
     // Procesar la transcripción como si fuera un mensaje de texto
     const parsed = await parseReminderWithOpenAI(transcription);
     
-    if (parsed.type === "reminder") {
-      // Aquí es donde debemos crear la fecha del evento
-      const fechaEvento = createLocalDateTime(parsed.data.date, parsed.data.time);
-      console.log(`Fecha y hora del evento (desde OpenAI): ${fechaEvento.toLocaleString(DateTime.DATETIME_SHORT)}`);
-
-      let notifyAt = null;
-      if (parsed.data.notify.includes("antes")) {
-        const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
-        if (match) {
-          const cantidad = parseInt(match[1]);
-          const unidad = match[2].startsWith('hora') ? { hours: cantidad } : { minutes: cantidad };
-          notifyAt = fechaEvento.minus(unidad);
-          console.log(`Aviso calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
-        }
-      }
-
-      if (!notifyAt) {
-        notifyAt = fechaEvento.minus({ minutes: 10 });
-        console.log(`Aviso por defecto calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
-      }
-
-      // Usar findBestEmoji para el emoji
-      const emoji = findBestEmoji(parsed.data.title);
-      console.log(`Emoji seleccionado para "${parsed.data.title}": ${emoji}`);
-
-      const newReminder = new Reminder({
-        phone: from,
-        title: parsed.data.title,
-        emoji,
-        date: fechaEvento.toJSDate(),
-        notifyAt: notifyAt.toJSDate(),
-        sent: false
-      });
-
-      await newReminder.save();
-      scheduleReminder(newReminder);
-
-      await sendWhatsAppMessage(from,
-        `${INITIAL_RESPONSES[Math.floor(Math.random() * INITIAL_RESPONSES.length)]}! Ya lo agendamos 🚀\n\n` +
-        `${emoji} ${capitalizeFirst(parsed.data.title)}\n` +
-        `🗓️ Fecha: ${fechaEvento.toFormat("dd/MM/yyyy 'a las' HH:mm")}\n` +
-        `⌛ Aviso: ${notifyAt.toFormat("dd/MM/yyyy 'a las' HH:mm")}\n\n` +
-        `Avisanos si necesitás que agendamos otro evento!`
-      );
-    } else if (parsed.type === "chat") {
-      await sendWhatsAppMessage(from, parsed.content);
-    } else if (parsed.type === "error") {
-      await sendWhatsAppMessage(from, "Lo siento, no pude procesar tu consulta. ¿Podrías reformularla?");
-    }
+    // Procesar el resultado
+    await handleParsedResponse(parsed, from);
     
     // Limpiar archivo temporal
     fs.unlinkSync(audioPath);
   } catch (err) {
     console.error('Error procesando audio:', err);
     await sendWhatsAppMessage(from, 'Lo siento, no pude procesar el audio. ¿Podrías intentar con un mensaje de texto?');
+  }
+}
+
+// Agregar esta función helper para manejar las respuestas parseadas
+async function handleParsedResponse(parsed, from) {
+  if (parsed.type === "reminder") {
+    const fechaEvento = createLocalDateTime(parsed.data.date, parsed.data.time);
+    console.log(`Fecha y hora del evento (desde OpenAI): ${fechaEvento.toLocaleString(DateTime.DATETIME_SHORT)}`);
+
+    let notifyAt = null;
+    if (parsed.data.notify.includes("antes")) {
+      const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
+      if (match) {
+        const cantidad = parseInt(match[1]);
+        const unidad = match[2].startsWith('hora') ? { hours: cantidad } : { minutes: cantidad };
+        notifyAt = fechaEvento.minus(unidad);
+        console.log(`Aviso calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
+      }
+    }
+
+    if (!notifyAt) {
+      notifyAt = fechaEvento.minus({ minutes: 10 });
+      console.log(`Aviso por defecto calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
+    }
+
+    const emoji = findBestEmoji(parsed.data.title);
+    console.log(`Emoji seleccionado para "${parsed.data.title}": ${emoji}`);
+
+    const newReminder = new Reminder({
+      phone: from,
+      title: parsed.data.title,
+      emoji,
+      date: fechaEvento.toJSDate(),
+      notifyAt: notifyAt.toJSDate(),
+      sent: false
+    });
+
+    await newReminder.save();
+    scheduleReminder(newReminder);
+
+    await sendWhatsAppMessage(from,
+      `${INITIAL_RESPONSES[Math.floor(Math.random() * INITIAL_RESPONSES.length)]}! Ya lo agendamos 🚀\n\n` +
+      `${emoji} ${capitalizeFirst(parsed.data.title)}\n` +
+      `🗓️ Fecha: ${fechaEvento.toFormat("dd/MM/yyyy 'a las' HH:mm")}\n` +
+      `⌛ Aviso: ${notifyAt.toFormat("dd/MM/yyyy 'a las' HH:mm")}\n\n` +
+      `Avisanos si necesitás que agendamos otro evento!`
+    );
+  } else if (parsed.type === "chat") {
+    await sendWhatsAppMessage(from, parsed.content);
+  } else if (parsed.type === "error") {
+    await sendWhatsAppMessage(from, "Lo siento, no pude procesar tu consulta. ¿Podrías reformularla?");
   }
 }
