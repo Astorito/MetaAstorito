@@ -695,3 +695,40 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`Servidor escuchando en puerto ${port}`);
 });
+
+// Agregar después de parseReminderWithOpenAI:
+
+async function getGPTResponse(text) {
+  try {
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: model,
+      messages: [
+        {
+          role: "system",
+          content: "Eres un asistente conciso que responde preguntas breves de manera directa y precisa, sin saludos ni explicaciones extra."
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ],
+      temperature: 0.2
+    }, {
+      headers: {
+        'Authorization': `Bearer ${openaiToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    return {
+      type: "chat",
+      content: response.data.choices[0].message.content.trim()
+    };
+  } catch (err) {
+    console.error("Error consultando a GPT:", err);
+    return {
+      type: "error",
+      content: "Disculpa, no pude procesar tu consulta."
+    };
+  }
+}
