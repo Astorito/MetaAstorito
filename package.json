@@ -1,1 +1,12 @@
-{"type": "commonjs"}
+{
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.5.0",
+    "mongoose": "^7.5.0",
+    "luxon": "^3.4.2",
+    "dotenv": "^16.3.1",
+    "form-data": "^4.0.0",
+    "chrono-node": "^2.7.0"
+  }
+}
