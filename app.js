@@ -109,10 +109,11 @@ async function parseReminderWithOpenAI(text) {
     return await getGPTResponse(text);
   }
 
-  const now = new Date();
-  const today = now.toISOString().split('T')[0];
-  
-  const systemPrompt = `Eres un asistente que extrae información de recordatorios en español.
+  try {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    
+    const systemPrompt = `Eres un asistente que extrae información de recordatorios en español.
 REGLAS ESTRICTAS PARA FECHAS Y HORAS:
 
 HOY ES: ${today}
@@ -155,7 +156,6 @@ Ejemplos válidos:
 
 Analizar este mensaje: "${text}"`;
 
-  try {
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
       model: model,
       messages: [{ role: "system", content: systemPrompt }],
@@ -468,8 +468,62 @@ function createLocalDate(fechaStr, horaStr) {
 
 // Agrega arriba, junto a otros requires
 const chrono = require('chrono-node');
-const fs = require('fs');
 const FormData = require('form-data');
+const fs = require('fs');
+const path = require('path');
+
+// Crear carpeta temporal para audios
+const audioDir = path.join(__dirname, 'temp');
+if (!fs.existsSync(audioDir)) {
+  fs.mkdirSync(audioDir, { recursive: true });
+}
+
+// Funciones para manejar audios
+async function downloadWhatsAppAudio(audioId) {
+  try {
+    const mediaUrl = `https://graph.facebook.com/v21.0/${audioId}`;
+    const response = await axios.get(mediaUrl, {
+      headers: { Authorization: `Bearer ${whatsappToken}` }
+    });
+
+    const mediaData = await axios.get(response.data.url, {
+      responseType: 'arraybuffer',
+      headers: { Authorization: `Bearer ${whatsappToken}` }
+    });
+
+    const audioPath = path.join(audioDir, `${audioId}.ogg`);
+    fs.writeFileSync(audioPath, mediaData.data);
+    return audioPath;
+  } catch (err) {
+    console.error('Error descargando audio:', err);
+    throw err;
+  }
+}
+
+async function transcribeWithWhisper(audioPath) {
+  try {
+    const form = new FormData();
+    form.append('file', fs.createReadStream(audioPath));
+    form.append('model', 'whisper-1');
+    form.append('language', 'es');
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/audio/transcriptions',
+      form,
+      {
+        headers: {
+          ...form.getHeaders(),
+          'Authorization': `Bearer ${openaiToken}`
+        }
+      }
+    );
+
+    return response.data.text;
+  } catch (err) {
+    console.error('Error transcribiendo audio:', err);
+    throw err;
+  }
+}
 
 // --- Función para manejar onboarding ---
 async function handleOnboarding(from, messageText) {
@@ -731,5 +785,79 @@ async function getGPTResponse(text) {
       type: "error",
       content: "Disculpa, no pude procesar tu consulta."
     };
+  }
+}
+
+// Modificar el webhook POST para manejar audios
+// En el webhook, antes de procesar messageText, agregar:
+
+const audioMsg = message?.audio;
+if (audioMsg) {
+  try {
+    console.log('Procesando mensaje de audio...');
+    const audioPath = await downloadWhatsAppAudio(audioMsg.id);
+    console.log('Audio descargado en:', audioPath);
+    
+    const transcription = await transcribeWithWhisper(audioPath);
+    console.log('Transcripción:', transcription);
+    
+    // Procesar la transcripción como si fuera un mensaje de texto
+    const parsed = await parseReminderWithOpenAI(transcription);
+    
+    if (parsed.type === "reminder") {
+      // Aquí es donde debemos crear la fecha del evento
+      const fechaEvento = createLocalDateTime(parsed.data.date, parsed.data.time);
+      console.log(`Fecha y hora del evento (desde OpenAI): ${fechaEvento.toLocaleString(DateTime.DATETIME_SHORT)}`);
+
+      let notifyAt = null;
+      if (parsed.data.notify.includes("antes")) {
+        const match = parsed.data.notify.match(/(\d+)\s*(minutos?|horas?)\s*antes/);
+        if (match) {
+          const cantidad = parseInt(match[1]);
+          const unidad = match[2].startsWith('hora') ? { hours: cantidad } : { minutes: cantidad };
+          notifyAt = fechaEvento.minus(unidad);
+          console.log(`Aviso calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
+        }
+      }
+
+      if (!notifyAt) {
+        notifyAt = fechaEvento.minus({ minutes: 10 });
+        console.log(`Aviso por defecto calculado: ${notifyAt.toLocaleString(DateTime.DATETIME_SHORT)}`);
+      }
+
+      // Usar findBestEmoji para el emoji
+      const emoji = findBestEmoji(parsed.data.title);
+      console.log(`Emoji seleccionado para "${parsed.data.title}": ${emoji}`);
+
+      const newReminder = new Reminder({
+        phone: from,
+        title: parsed.data.title,
+        emoji,
+        date: fechaEvento.toJSDate(),
+        notifyAt: notifyAt.toJSDate(),
+        sent: false
+      });
+
+      await newReminder.save();
+      scheduleReminder(newReminder);
+
+      await sendWhatsAppMessage(from,
+        `${INITIAL_RESPONSES[Math.floor(Math.random() * INITIAL_RESPONSES.length)]}! Ya lo agendamos 🚀\n\n` +
+        `${emoji} ${capitalizeFirst(parsed.data.title)}\n` +
+        `🗓️ Fecha: ${fechaEvento.toFormat("dd/MM/yyyy 'a las' HH:mm")}\n` +
+        `⌛ Aviso: ${notifyAt.toFormat("dd/MM/yyyy 'a las' HH:mm")}\n\n` +
+        `Avisanos si necesitás que agendamos otro evento!`
+      );
+    } else if (parsed.type === "chat") {
+      await sendWhatsAppMessage(from, parsed.content);
+    } else if (parsed.type === "error") {
+      await sendWhatsAppMessage(from, "Lo siento, no pude procesar tu consulta. ¿Podrías reformularla?");
+    }
+    
+    // Limpiar archivo temporal
+    fs.unlinkSync(audioPath);
+  } catch (err) {
+    console.error('Error procesando audio:', err);
+    await sendWhatsAppMessage(from, 'Lo siento, no pude procesar el audio. ¿Podrías intentar con un mensaje de texto?');
   }
 }
