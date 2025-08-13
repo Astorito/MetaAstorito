@@ -783,7 +783,7 @@ app.listen(port, () => {
   console.log(`Servidor escuchando en puerto ${port}`);
 });
 
-// Agregar después de parseReminderWithOpenAI:
+// Agregar después de capitalizeFirst:
 
 async function getGPTResponse(text) {
   try {
@@ -820,34 +820,8 @@ async function getGPTResponse(text) {
   }
 }
 
-// Modificar el webhook POST para manejar audios
-// En el webhook, antes de procesar messageText, agregar:
+// Agregar antes del webhook POST:
 
-const audioMsg = message?.audio;
-if (audioMsg) {
-  try {
-    console.log('Procesando mensaje de audio...');
-    const audioPath = await downloadWhatsAppAudio(audioMsg.id);
-    console.log('Audio descargado en:', audioPath);
-    
-    const transcription = await transcribeWithWhisper(audioPath);
-    console.log('Transcripción:', transcription);
-    
-    // Procesar la transcripción como si fuera un mensaje de texto
-    const parsed = await parseReminderWithOpenAI(transcription);
-    
-    // Procesar el resultado
-    await handleParsedResponse(parsed, from);
-    
-    // Limpiar archivo temporal
-    fs.unlinkSync(audioPath);
-  } catch (err) {
-    console.error('Error procesando audio:', err);
-    await sendWhatsAppMessage(from, 'Lo siento, no pude procesar el audio. ¿Podrías intentar con un mensaje de texto?');
-  }
-}
-
-// Agregar esta función helper para manejar las respuestas parseadas
 async function handleParsedResponse(parsed, from) {
   if (parsed.type === "reminder") {
     const fechaEvento = createLocalDateTime(parsed.data.date, parsed.data.time);
