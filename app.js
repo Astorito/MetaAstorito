@@ -235,7 +235,11 @@ function scheduleReminder(reminder) {
   }
 
   setTimeout(async () => {
-    const message = `Hola! Acordate que hoy tenes ${reminder.title} ${reminder.emoji}`;
+    // Buscar el usuario para obtener su nombre
+    const user = await User.findOne({ phone: reminder.phone });
+    const userName = user?.name || '';
+    
+    const message = `Hola ${userName}! Acordate que hoy tenes ${reminder.title} ${reminder.emoji}`;
     await sendWhatsAppMessage(reminder.phone, message);
 
     reminder.sent = true;
@@ -544,26 +548,25 @@ async function handleOnboarding(from, messageText) {
 
   switch (user.onboardingState.currentStep) {
     case 'welcome':
-      response = "¡Hola! Soy Astorito, ¡qué bueno verte por acá! 👋\n\nPara empezar, ¿podrías decirme tu nombre?";
+      response = "Hola! Soy Astorito, como es tu nombre?";
       user.onboardingState.currentStep = 'ask_name';
       break;
 
     case 'ask_name':
-      user.name = messageText.trim();
+      user.name = capitalizeFirst(messageText.trim());
       user.onboardingState.currentStep = 'ask_email';
-      response = "¡Gracias! Ahora, ¿podrías compartirme tu correo electrónico?";
+      response = "Podrás pasarme tu email?";
       break;
 
     case 'ask_email':
       if (messageText.includes('@')) {
-        user.email = messageText.trim();
+        user.email = messageText.trim().toLowerCase();
         user.onboardingState.currentStep = 'completed';
         user.onboardingState.completed = true;
-        response = `¡Perfecto ${user.name}! 🌟 Déjame contarte en qué puedo ayudarte:\n\n` +
-          "⿡ Puedo crear recordatorios para tus eventos y tareas importantes\n" +
-          "⿣ Puedo procesar mensajes de voz si prefieres hablar en lugar de escribir\n\n" +
-          "Ademas tenemos Astorito Quiz todos los miercoles, donde podes jugar por premios contra todos tus amigos 🎮\n\n" +
-          "Perooo si necesitas un Astorito más poderoso, lo buscas por acá https://astorito.ai donde podés suscribirte a Astorito Todopoderoso, con mil funciones nuevas para que descubras. \n\n" +
+        response = `🌟 Déjame contarte en qué puedo ayudarte:\n\n` +
+          "1. Puedo crear recordatorios para tus eventos y tareas importantes\n" +
+          "2. Puedo procesar mensajes de voz si prefieres hablar en lugar de escribir\n\n" +
+          "Perooo si necesitas un Astorito más poderoso, lo buscas por acá https://astorito.ai donde podés suscribirte a Astorito Todopoderoso, con mil funciones nuevas para que descubras.\n\n" +
           "Un abrazo de carpincho 🦫 y te espero para charlar!\n\n";
         shouldContinue = false;
       } else {
@@ -792,14 +795,21 @@ async function getGPTResponse(text) {
       messages: [
         {
           role: "system",
-          content: "Eres un asistente conciso que responde preguntas breves de manera directa y precisa, sin saludos ni explicaciones extra."
+          content: "Eres un asistente ultra conciso. REGLAS IMPORTANTES:\n" +
+            "1. Responde en máximo 2 líneas\n" +
+            "2. No uses saludos ni despedidas\n" +
+            "3. Ve directo al punto\n" +
+            "4. Si la pregunta es sobre una fecha u hora, responde solo el dato\n" +
+            "5. Usa datos actuales y precisos\n" +
+            "6. Si no estás seguro, di 'No tengo esa información'"
         },
         {
           role: "user",
           content: text
         }
       ],
-      temperature: 0.2
+      temperature: 0.2, // Temperatura baja para respuestas más consistentes
+      max_tokens: 60    // Limitar longitud de respuesta
     }, {
       headers: {
         'Authorization': `Bearer ${openaiToken}`,
