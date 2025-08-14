@@ -34,4 +34,18 @@ async function handleOnboarding(from, messageText) {
         user.onboardingState.completed = true;
         response = `🌟 Déjame contarte en qué puedo ayudarte:\n\n` +
           "1. Puedo crear recordatorios para tus eventos y tareas importantes\n" +
-          "2. Puedo procesar mensajes de voz si prefieres hablar
+          "2. Puedo procesar mensajes de voz si prefieres hablar en lugar de escribir\n\n" +
+          "Perooo si necesitas un Astorito más poderoso, lo buscas por acá https://astorito.ai\n\n" +
+          "Un abrazo de carpincho 🦫 y te espero para charlar!";
+        shouldContinue = false;
+      } else {
+        response = "Por favor, ingresa un correo electrónico válido";
+      }
+      break;
+  }
+
+  await user.save();
+  return { message: response, shouldContinue };
+}
+
+module.exports = { handleOnboarding };
