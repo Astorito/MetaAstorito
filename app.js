@@ -508,52 +508,69 @@ async function transcribeWithWhisper(audioPath) {
   try {
     console.log('Iniciando transcripción...');
     
-    // Verificar que el archivo existe
+    // Verificar que el archivo existe y tiene tamaño
     if (!fs.existsSync(audioPath)) {
       throw new Error('Archivo de audio no encontrado');
     }
 
-    // Verificar tamaño del archivo
     const stats = fs.statSync(audioPath);
     console.log(`Tamaño del archivo: ${stats.size} bytes`);
 
+    // Crear FormData siguiendo el formato del curl
     const form = new FormData();
-    form.append('file', fs.createReadStream(audioPath));
-    form.append('model', 'whisper-1');  // Usar whisper-1 que es el modelo actual
-    form.append('language', 'es');      // Especificar español
+    form.append('file', fs.createReadStream(audioPath), {
+      filename: path.basename(audioPath),
+      contentType: 'audio/ogg'  // Especificar el tipo de contenido
+    });
+    form.append('model', 'whisper-1');
+    form.append('language', 'es');
 
+    // Configurar la petición como en el curl
     const response = await axios({
       method: 'post',
       url: 'https://api.openai.com/v1/audio/transcriptions',
       headers: {
         'Authorization': `Bearer ${openaiToken}`,
-        ...form.getHeaders(),
+        ...form.getHeaders()
       },
       data: form,
       maxContentLength: Infinity,
-      maxBodyLength: Infinity
+      maxBodyLength: Infinity,
+      // Agregar timeouts más largos
+      timeout: 30000 // 30 segundos
     });
 
-    console.log('Transcripción completada exitosamente');
+    if (!response.data || !response.data.text) {
+      throw new Error('Respuesta inválida de OpenAI');
+    }
+
+    console.log('Transcripción exitosa:', response.data);
     return response.data.text;
 
   } catch (err) {
-    console.error('Error detallado de transcripción:', {
+    // Log detallado del error
+    console.error('Error detallado:', {
+      message: err.message,
       status: err.response?.status,
       statusText: err.response?.statusText,
       data: err.response?.data,
-      message: err.message
+      headers: err.response?.headers
     });
 
-    // Manejar errores específicos
-    if (err.response?.status === 403) {
-      throw new Error('Error de autenticación con OpenAI - Verifica tu API key');
+    if (err.response?.status === 401 || err.response?.status === 403) {
+      throw new Error(`Error de autenticación con OpenAI (${err.response.status}): ${err.response?.data?.error?.message || 'Verifica tu API key'}`);
     }
-    if (err.response?.status === 413) {
-      throw new Error('El archivo de audio es demasiado grande');
+
+    throw new Error(`Error transcribiendo audio: ${err.message}`);
+  } finally {
+    // Limpiar el archivo temporal si existe
+    try {
+      if (fs.existsSync(audioPath)) {
+        fs.unlinkSync(audioPath);
+      }
+    } catch (cleanupErr) {
+      console.error('Error limpiando archivo temporal:', cleanupErr);
     }
-    
-    throw new Error('Error transcribiendo audio: ' + (err.response?.data?.error?.message || err.message));
   }
 }
 
