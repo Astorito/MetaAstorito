@@ -516,54 +516,53 @@ async function transcribeWithWhisper(audioPath) {
     const stats = fs.statSync(audioPath);
     console.log(`Tamaño del archivo: ${stats.size} bytes`);
 
-    // Crear FormData siguiendo el formato del curl
+    // Crear FormData siguiendo la especificación exacta de la API
     const form = new FormData();
     form.append('file', fs.createReadStream(audioPath), {
       filename: path.basename(audioPath),
-      contentType: 'audio/ogg'  // Especificar el tipo de contenido
+      contentType: 'audio/ogg; codecs=opus' // Formato específico de WhatsApp
     });
     form.append('model', 'whisper-1');
     form.append('language', 'es');
+    form.append('response_format', 'json');
 
-    // Configurar la petición como en el curl
-    const response = await axios({
-      method: 'post',
-      url: 'https://api.openai.com/v1/audio/transcriptions',
-      headers: {
-        'Authorization': `Bearer ${openaiToken}`,
-        ...form.getHeaders()
-      },
-      data: form,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      // Agregar timeouts más largos
-      timeout: 30000 // 30 segundos
-    });
+    console.log('Enviando petición a OpenAI...');
+    
+    const response = await axios.post(
+      'https://api.openai.com/v1/audio/transcriptions',
+      form,
+      {
+        headers: {
+          'Authorization': `Bearer ${openaiToken}`,
+          ...form.getHeaders()
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        timeout: 30000
+      }
+    );
+
+    console.log('Respuesta recibida de OpenAI:', response.data);
 
     if (!response.data || !response.data.text) {
       throw new Error('Respuesta inválida de OpenAI');
     }
 
-    console.log('Transcripción exitosa:', response.data);
     return response.data.text;
 
   } catch (err) {
-    // Log detallado del error
-    console.error('Error detallado:', {
-      message: err.message,
+    // Log detallado para debugging
+    console.error('Error detallado de transcripción:', {
       status: err.response?.status,
       statusText: err.response?.statusText,
       data: err.response?.data,
-      headers: err.response?.headers
+      headers: err?.response?.headers,
+      message: err.message
     });
-
-    if (err.response?.status === 401 || err.response?.status === 403) {
-      throw new Error(`Error de autenticación con OpenAI (${err.response.status}): ${err.response?.data?.error?.message || 'Verifica tu API key'}`);
-    }
 
     throw new Error(`Error transcribiendo audio: ${err.message}`);
   } finally {
-    // Limpiar el archivo temporal si existe
+    // Limpiar archivo temporal
     try {
       if (fs.existsSync(audioPath)) {
         fs.unlinkSync(audioPath);
