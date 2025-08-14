@@ -506,26 +506,54 @@ async function downloadWhatsAppAudio(audioId) {
 
 async function transcribeWithWhisper(audioPath) {
   try {
+    console.log('Iniciando transcripción...');
+    
+    // Verificar que el archivo existe
+    if (!fs.existsSync(audioPath)) {
+      throw new Error('Archivo de audio no encontrado');
+    }
+
+    // Verificar tamaño del archivo
+    const stats = fs.statSync(audioPath);
+    console.log(`Tamaño del archivo: ${stats.size} bytes`);
+
     const form = new FormData();
     form.append('file', fs.createReadStream(audioPath));
-    form.append('model', 'whisper-1');
-    form.append('language', 'es');
+    form.append('model', 'whisper-1');  // Usar whisper-1 que es el modelo actual
+    form.append('language', 'es');      // Especificar español
 
-    const response = await axios.post(
-      'https://api.openai.com/v1/audio/transcriptions',
-      form,
-      {
-        headers: {
-          ...form.getHeaders(),
-          'Authorization': `Bearer ${openaiToken}`
-        }
-      }
-    );
+    const response = await axios({
+      method: 'post',
+      url: 'https://api.openai.com/v1/audio/transcriptions',
+      headers: {
+        'Authorization': `Bearer ${openaiToken}`,
+        ...form.getHeaders(),
+      },
+      data: form,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
+    });
 
+    console.log('Transcripción completada exitosamente');
     return response.data.text;
+
   } catch (err) {
-    console.error('Error transcribiendo audio:', err);
-    throw err;
+    console.error('Error detallado de transcripción:', {
+      status: err.response?.status,
+      statusText: err.response?.statusText,
+      data: err.response?.data,
+      message: err.message
+    });
+
+    // Manejar errores específicos
+    if (err.response?.status === 403) {
+      throw new Error('Error de autenticación con OpenAI - Verifica tu API key');
+    }
+    if (err.response?.status === 413) {
+      throw new Error('El archivo de audio es demasiado grande');
+    }
+    
+    throw new Error('Error transcribiendo audio: ' + (err.response?.data?.error?.message || err.message));
   }
 }
 
@@ -604,7 +632,7 @@ app.post("/", async (req, res) => {
         console.log('Audio descargado en:', audioPath);
         
         const transcription = await transcribeWithWhisper(audioPath);
-        console.log('Transcripción:', transcription);
+        console.log('Texto transcrito:', transcription);
         
         // Procesar la transcripción como si fuera un mensaje de texto
         const parsed = await parseReminderWithOpenAI(transcription);
