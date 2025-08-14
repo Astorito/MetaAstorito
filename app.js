@@ -504,71 +504,68 @@ async function downloadWhatsAppAudio(audioId) {
   }
 }
 
+// Crear instancia de OpenAI
+const OpenAI = require('openai');
+const openai = new OpenAI({ apiKey: openaiToken });
+
+// Agregar los nuevos imports
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+// Modificar la función de transcripción
 async function transcribeWithWhisper(audioPath) {
   try {
     console.log('Iniciando transcripción...');
     
-    // Verificar que el archivo existe y tiene tamaño
+    // Verificar archivo original
     if (!fs.existsSync(audioPath)) {
       throw new Error('Archivo de audio no encontrado');
     }
 
-    const stats = fs.statSync(audioPath);
-    console.log(`Tamaño del archivo: ${stats.size} bytes`);
-
-    // Crear FormData siguiendo la especificación exacta de la API
-    const form = new FormData();
-    form.append('file', fs.createReadStream(audioPath), {
-      filename: path.basename(audioPath),
-      contentType: 'audio/ogg; codecs=opus' // Formato específico de WhatsApp
-    });
-    form.append('model', 'whisper-1');
-    form.append('language', 'es');
-    form.append('response_format', 'json');
-
-    console.log('Enviando petición a OpenAI...');
+    // Convertir OGG a MP3
+    const mp3Path = audioPath.replace('.ogg', '.mp3');
     
-    const response = await axios.post(
-      'https://api.openai.com/v1/audio/transcriptions',
-      form,
-      {
-        headers: {
-          'Authorization': `Bearer ${openaiToken}`,
-          ...form.getHeaders()
-        },
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-        timeout: 30000
-      }
-    );
+    await new Promise((resolve, reject) => {
+      ffmpeg(audioPath)
+        .toFormat('mp3')
+        .on('error', reject)
+        .on('end', resolve)
+        .save(mp3Path);
+    });
 
-    console.log('Respuesta recibida de OpenAI:', response.data);
+    console.log('Audio convertido a MP3');
 
-    if (!response.data || !response.data.text) {
-      throw new Error('Respuesta inválida de OpenAI');
-    }
+    // Usar la nueva SDK de OpenAI
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(mp3Path),
+      model: "whisper-1",
+      language: "es"
+    });
 
-    return response.data.text;
+    console.log('Transcripción exitosa:', transcription.text);
+    
+    // Limpiar archivos
+    fs.unlinkSync(mp3Path);
+    
+    return transcription.text;
 
   } catch (err) {
-    // Log detallado para debugging
-    console.error('Error detallado de transcripción:', {
-      status: err.response?.status,
-      statusText: err.response?.statusText,
-      data: err.response?.data,
-      headers: err?.response?.headers,
-      message: err.message
+    console.error('Error detallado:', {
+      message: err.message,
+      status: err.status,
+      code: err.code,
+      type: err.type
     });
-
     throw new Error(`Error transcribiendo audio: ${err.message}`);
   } finally {
-    // Limpiar archivo temporal
+    // Limpiar archivo original
     try {
       if (fs.existsSync(audioPath)) {
         fs.unlinkSync(audioPath);
       }
     } catch (cleanupErr) {
-      console.error('Error limpiando archivo temporal:', cleanupErr);
+      console.error('Error limpiando archivos:', cleanupErr);
     }
   }
 }
