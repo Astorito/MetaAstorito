@@ -1,10 +1,7 @@
-const OpenAI = require('openai');
 const { openaiToken, model } = require('../config/environment');
-// o si no tienes la variable en environment.js:
-// const model = "gpt-3.5-turbo";
-const { DateTime } = require('luxon');
-
+const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: openaiToken });
+const { DateTime } = require('luxon');
 
 async function getGPTResponse(text) {
   try {
@@ -18,7 +15,8 @@ async function getGPTResponse(text) {
             "2. No uses saludos ni despedidas\n" +
             "3. Ve directo al punto\n" +
             "4. Si la pregunta es sobre fecha u hora, responde solo el dato\n" +
-            "5. Usa datos actuales y precisos"
+            "5. Usa datos actuales y precisos\n" +
+            "6. No termines la respuesta con punto final"
         },
         { role: "user", content: text }
       ],
@@ -26,15 +24,20 @@ async function getGPTResponse(text) {
       max_tokens: 60
     });
 
+    let content = response.choices[0].message.content.trim();
+    // Elimina el punto final si existe
+    if (content.endsWith('.')) {
+      content = content.slice(0, -1);
+    }
     return {
       type: "chat",
-      content: response.choices[0].message.content.trim()
+      content
     };
   } catch (err) {
     console.error("Error consultando a GPT:", err);
     return {
       type: "error",
-      content: "Disculpa, no pude procesar tu consulta."
+      content: "Disculpa, no pude procesar tu consulta"
     };
   }
 }
