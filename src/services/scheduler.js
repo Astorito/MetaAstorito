@@ -1,29 +1,31 @@
-const { DateTime } = require('luxon');
-const { sendWhatsAppMessage } = require('./whatsapp');
 const Reminder = require('../models/reminder');
-const User = require('../models/user');
+const { sendWhatsAppMessage } = require('./whatsapp');
+const { DateTime } = require('luxon');
 
-async function scheduleReminder(reminder) {
+async function checkReminders() {
   const now = new Date();
-  const delay = reminder.notifyAt.getTime() - now.getTime();
+  const reminders = await Reminder.find({
+    sent: false,
+    notifyAt: { $lte: now }
+  });
 
-  if (delay <= 0) {
-    console.log("Recordatorio vencido, no se programa:", reminder);
-    return;
-  }
+  for (const reminder of reminders) {
+    const eventDate = DateTime.fromJSDate(reminder.date);
+    const notifyMsg =
+      `⏰ ¡Recordatorio!\n\n` +
+      `${reminder.emoji} *${reminder.title}*\n` +
+      `📅 ${eventDate.toFormat("EEEE d 'de' MMMM", { locale: 'es' })} a las ${eventDate.toFormat('HH:mm')}\n\n` +
+      `_No te olvides!_`;
 
-  setTimeout(async () => {
-    const user = await User.findOne({ phone: reminder.phone });
-    const userName = user?.name || '';
-    
-    const message = `Hola ${userName}! Acordate que hoy tenes ${reminder.title} ${reminder.emoji}`;
-    await sendWhatsAppMessage(reminder.phone, message);
-
+    await sendWhatsAppMessage(reminder.phone, notifyMsg);
     reminder.sent = true;
     await reminder.save();
-  }, delay);
-
-  console.log(`Recordatorio programado para ${reminder.notifyAt.toLocaleString()}`);
+  }
 }
 
-module.exports = { scheduleReminder };
+// Ejecutar cada minuto
+function startScheduler() {
+  setInterval(checkReminders, 60 * 1000);
+}
+
+module.exports = { startScheduler };
