@@ -1,5 +1,7 @@
 const OpenAI = require('openai');
-const { openaiToken } = require('../config/environment');
+const { openaiToken, model } = require('../config/environment');
+// o si no tienes la variable en environment.js:
+// const model = "gpt-3.5-turbo";
 const { DateTime } = require('luxon');
 
 const openai = new OpenAI({ apiKey: openaiToken });
