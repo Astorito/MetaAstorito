@@ -1,6 +1,8 @@
 const User = require('../models/user');
 const { capitalizeFirst } = require('../utils/formatter');
 
+const model = "gpt-3.5-turbo"; // o el que corresponda
+
 async function handleOnboarding(from, messageText) {
   let user = await User.findOne({ phone: from });
   if (!user) {
