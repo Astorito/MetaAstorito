@@ -4,7 +4,8 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const { openai } = require('./openai');
 const axios = require('axios');
-const { whatsappToken } = require('../config/environment');
+const FormData = require('form-data');
+const { whatsappToken, openaiToken } = require('../config/environment');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -34,37 +35,45 @@ async function downloadWhatsAppAudio(audioId) {
   }
 }
 
-async function transcribeWithWhisper(audioPath) {
-  try {
-    console.log('Iniciando transcripción...');
-    
-    const mp3Path = audioPath.replace('.ogg', '.mp3');
-    
-    await new Promise((resolve, reject) => {
-      ffmpeg(audioPath)
-        .toFormat('mp3')
-        .on('error', reject)
-        .on('end', resolve)
-        .save(mp3Path);
-    });
+async function transcribeAudio(audioPath) {
+  const modelos = ['whisper-1', 'gpt-4o-transcribe'];
+  let lastError;
 
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(mp3Path),
-      model: "whisper-1",
-      language: "es"
-    });
+  for (const modelo of modelos) {
+    const form = new FormData();
+    form.append('file', fs.createReadStream(audioPath));
+    form.append('model', modelo);
+    form.append('language', 'es');
 
-    fs.unlinkSync(mp3Path);
-    return transcription.text;
-
-  } catch (err) {
-    console.error('Error en transcripción:', err);
-    throw new Error(`Error transcribiendo audio: ${err.message}`);
-  } finally {
-    if (fs.existsSync(audioPath)) {
-      fs.unlinkSync(audioPath);
+    try {
+      const response = await axios.post(
+        'https://api.openai.com/v1/audio/transcriptions',
+        form,
+        {
+          headers: {
+            ...form.getHeaders(),
+            Authorization: `Bearer ${openaiToken}`
+          }
+        }
+      );
+      // Limpia el archivo temporal después de transcribir
+      fs.unlink(audioPath, () => {});
+      return response.data.text;
+    } catch (err) {
+      lastError = err;
+      console.error(`Error con modelo ${modelo}:`, err.response?.data || err.message);
+      // Si es error de modelo no disponible, intenta el siguiente
+      if (modelo === 'whisper-1' && err.response?.status === 400) {
+        continue;
+      } else {
+        break;
+      }
     }
   }
+
+  // Limpia el archivo si no se pudo transcribir
+  fs.unlink(audioPath, () => {});
+  throw new Error('No se pudo transcribir el audio con ningún modelo. Último error: ' + (lastError.response?.data?.error?.message || lastError.message));
 }
 
-module.exports = { downloadWhatsAppAudio, transcribeWithWhisper };
+module.exports = { downloadWhatsAppAudio, transcribeAudio };

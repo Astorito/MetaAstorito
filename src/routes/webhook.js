@@ -4,10 +4,11 @@ const { verifyWebhook } = require('../middleware/auth');
 const { handleOnboarding } = require('../middleware/onboarding');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { getGPTResponse, parseReminderWithOpenAI } = require('../services/openai');
-const { downloadWhatsAppAudio, transcribeWithWhisper } = require('../services/audio');
+const { downloadWhatsAppAudio, transcribeAudio } = require('../services/audio');
 const { findBestEmoji } = require('../utils/emoji');
 const Reminder = require('../models/reminder');
 const { DateTime } = require('luxon');
+const { handleWeatherQuery } = require('../services/weather');
 
 router.post("/", async (req, res) => {
   try {
@@ -37,6 +38,11 @@ router.post("/", async (req, res) => {
       if (!onboardingResponse.shouldContinue) {
         return res.sendStatus(200);
       }
+    }
+
+    // Consultar clima
+    if (await handleWeatherQuery(messageText, from)) {
+      return res.sendStatus(200);
     }
 
     // Procesar mensaje
@@ -87,6 +93,14 @@ router.post("/", async (req, res) => {
     } catch (err) {
       console.error('❌ Error procesando mensaje:', err);
       await sendWhatsAppMessage(from, "Disculpa, tuve un problema procesando tu mensaje. ¿Podrías intentarlo de nuevo?");
+    }
+
+    if (incomingMessage?.audio) {
+      // Suponiendo que ya descargaste el audio y tienes la ruta local en audioPath
+      const audioPath = await downloadWhatsAppAudio(incomingMessage.audio.id); // tu función de descarga
+      const texto = await transcribeAudio(audioPath);
+      await sendWhatsAppMessage(from, `📝 Transcripción: ${texto}`);
+      return res.sendStatus(200);
     }
 
     return res.sendStatus(200);

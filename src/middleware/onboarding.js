@@ -13,33 +13,37 @@ async function handleOnboarding(from, messageText) {
   }
 
   let response;
-  let shouldContinue = true;
+  let shouldContinue = false; // Solo avanza si el usuario responde correctamente
 
   switch (user.onboardingState.currentStep) {
     case 'welcome':
-      response = "Hola! Soy Astorito, como es tu nombre?";
+      response = "¡Hola! Soy Astorito 😊 ¿Cómo es tu nombre?";
       user.onboardingState.currentStep = 'ask_name';
       break;
 
     case 'ask_name':
-      user.name = capitalizeFirst(messageText.trim());
-      user.onboardingState.currentStep = 'ask_email';
-      response = "Podrás pasarme tu email?";
+      if (messageText && messageText.trim().length > 1) {
+        user.name = capitalizeFirst(messageText.trim());
+        response = "Gracias! ¿Podés pasarme tu email?";
+        user.onboardingState.currentStep = 'ask_email';
+      } else {
+        response = "Por favor, decime tu nombre para continuar.";
+      }
       break;
 
     case 'ask_email':
-      if (messageText.includes('@')) {
+      if (messageText && messageText.includes('@')) {
         user.email = messageText.trim().toLowerCase();
         user.onboardingState.currentStep = 'completed';
         user.onboardingState.completed = true;
-        response = `🌟 Déjame contarte en qué puedo ayudarte:\n\n` +
+        response = `🌟 ¡Listo ${user.name}! Ahora podés usar todas las funciones de Astorito.\n\n` +
           "1. Puedo crear recordatorios para tus eventos y tareas importantes\n" +
-          "2. Puedo procesar mensajes de voz si prefieres hablar en lugar de escribir\n\n" +
-          "Perooo si necesitas un Astorito más poderoso, lo buscas por acá https://astorito.ai\n\n" +
-          "Un abrazo de carpincho 🦫 y te espero para charlar!";
-        shouldContinue = false;
+          "2. Puedo procesar mensajes de voz si preferís hablar en lugar de escribir\n\n" +
+          "3. Podes consultarme el clima de tu ciudad\n\n"
+          "Si necesitás un Astorito más poderoso, visitá https://astorito.ai y encontra a los Astoritos para empresas\n\n" +
+          "¡Un abrazo de carpincho 🦫!";
       } else {
-        response = "Por favor, ingresa un correo electrónico válido";
+        response = "Por favor, ingresá un correo electrónico válido.";
       }
       break;
   }
