@@ -5,6 +5,9 @@ const { handleOnboarding } = require('../middleware/onboarding');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { getGPTResponse, parseReminderWithOpenAI } = require('../services/openai');
 const { downloadWhatsAppAudio, transcribeWithWhisper } = require('../services/audio');
+const { findBestEmoji } = require('../utils/emoji');
+const Reminder = require('../models/reminder');
+const { DateTime } = require('luxon');
 
 router.post("/", async (req, res) => {
   try {
@@ -44,19 +47,39 @@ router.post("/", async (req, res) => {
       
       if (parsed.type === "reminder") {
         console.log('⏰ Creando recordatorio:', parsed.data);
-        // Crear y programar recordatorio
+        
+        // Calcular fecha de notificación
+        const eventDate = DateTime.fromISO(`${parsed.data.date}T${parsed.data.time}`);
+        let notifyAt = eventDate;
+        
+        if (parsed.data.notify?.includes('horas antes')) {
+          const hours = parseInt(parsed.data.notify);
+          notifyAt = eventDate.minus({ hours });
+        } else if (parsed.data.notify?.includes('minutos antes')) {
+          const minutes = parseInt(parsed.data.notify);
+          notifyAt = eventDate.minus({ minutes });
+        }
+
+        // Crear recordatorio
         const reminder = new Reminder({
           phone: from,
           title: parsed.data.title,
           emoji: findBestEmoji(parsed.data.title),
-          date: new Date(parsed.data.date + 'T' + parsed.data.time),
-          notifyAt: new Date(parsed.data.date + 'T' + parsed.data.time)
+          date: eventDate.toJSDate(),
+          notifyAt: notifyAt.toJSDate(),
+          sent: false
         });
 
         await reminder.save();
         console.log('💾 Recordatorio guardado:', reminder);
         
-        const confirmMessage = `¡Listo! Te recordaré "${reminder.title}" ${reminder.emoji} el ${reminder.date.toLocaleString()}`;
+        const confirmMessage =
+          `✅ Recordatorio creado!\n\n` +
+          `${reminder.emoji} *${reminder.title}*\n` +
+          `📅 Fecha: ${eventDate.toFormat("EEEE d 'de' MMMM", { locale: 'es' })} a las ${eventDate.toFormat('HH:mm')}\n` +
+          `⏰ Te avisaré: ${notifyAt.toFormat("EEEE d 'de' MMMM", { locale: 'es' })} a las ${notifyAt.toFormat('HH:mm')}\n\n` +
+          `Avisanos si queres agendar otro evento!`;
+
         await sendWhatsAppMessage(from, confirmMessage);
       } else {
         await sendWhatsAppMessage(from, parsed.content);
