@@ -52,10 +52,22 @@ router.post("/", async (req, res) => {
       console.log('✨ Mensaje parseado:', parsed);
       
       if (parsed.type === "reminder") {
+        // Validar que haya fecha y hora
+        if (!parsed.data.date || !parsed.data.time) {
+          await sendWhatsAppMessage(from, "Faltan datos para crear el recordatorio (fecha y hora). ¿Podés especificarlos?");
+          return res.sendStatus(200);
+        }
+
+        // Validar que la fecha sea válida
+        const eventDate = DateTime.fromISO(`${parsed.data.date}T${parsed.data.time}`);
+        if (!eventDate.isValid) {
+          await sendWhatsAppMessage(from, "La fecha y hora del recordatorio no son válidas. Por favor, revisá el mensaje.");
+          return res.sendStatus(200);
+        }
+        
         console.log('⏰ Creando recordatorio:', parsed.data);
         
         // Calcular fecha de notificación
-        const eventDate = DateTime.fromISO(`${parsed.data.date}T${parsed.data.time}`);
         let notifyAt = eventDate;
         
         if (parsed.data.notify?.includes('horas antes')) {
