@@ -8,42 +8,20 @@ const { downloadWhatsAppAudio, transcribeWithWhisper } = require('../services/au
 
 router.post("/", async (req, res) => {
   try {
-    const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    const from = message?.from;
-
-    // Manejar respuestas de botones
-    if (message?.interactive?.type === "button_reply") {
-      const buttonId = message.interactive.button_reply.id;
-      const context = await getTemporaryContext(from);
-      
-      if (context?.type === 'waiting_time_confirmation') {
-        const timeResponse = {
-          hour: context.hour,
-          minutes: context.minutes,
-          period: buttonId // 'mañana' o 'tarde'
-        };
-        
-        const finalReminder = await handleTimeConfirmation(context.originalText, timeResponse);
-        await handleParsedResponse(finalReminder, from);
-        await clearTemporaryContext(from);
-      }
-      
-      return res.sendStatus(200);
-    }
-
-    console.log('\n🔔 Webhook recibido:', new Date().toISOString());
+    console.log('🔔 Webhook recibido:', new Date().toISOString());
     
-    const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    const from = message?.from;
-    const messageText = message?.text?.body;
+    const incomingMessage = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    const from = incomingMessage?.from;
+    const messageText = incomingMessage?.text?.body;
+    const messageType = incomingMessage?.type;
 
     console.log('📝 Mensaje:', {
       from,
       text: messageText,
-      type: message?.type
+      type: messageType
     });
 
-    if (!message || !from) {
+    if (!incomingMessage || !from) {
       console.log("❌ Mensaje inválido");
       return res.sendStatus(200);
     }
@@ -64,9 +42,7 @@ router.post("/", async (req, res) => {
       const parsed = await parseReminderWithOpenAI(messageText);
       console.log('✨ Mensaje parseado:', parsed);
       
-      if (parsed.type === "confirm_time") {
-        await sendWhatsAppMessage(from, null, parsed.buttons);
-      } else if (parsed.type === "reminder") {
+      if (parsed.type === "reminder") {
         console.log('⏰ Creando recordatorio:', parsed.data);
         // Crear y programar recordatorio
         const reminder = new Reminder({
@@ -83,7 +59,6 @@ router.post("/", async (req, res) => {
         const confirmMessage = `¡Listo! Te recordaré "${reminder.title}" ${reminder.emoji} el ${reminder.date.toLocaleString()}`;
         await sendWhatsAppMessage(from, confirmMessage);
       } else {
-        console.log('💬 Enviando respuesta:', parsed.content);
         await sendWhatsAppMessage(from, parsed.content);
       }
     } catch (err) {
