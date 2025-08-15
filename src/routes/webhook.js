@@ -8,44 +8,67 @@ const { downloadWhatsAppAudio, transcribeWithWhisper } = require('../services/au
 
 router.post("/", async (req, res) => {
   try {
-    // Log del webhook completo
-    console.log('Webhook recibido:', new Date().toISOString());
-    console.log('Body:', JSON.stringify(req.body, null, 2));
-
-    const entry = req.body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value = changes?.value;
-    const messages = value?.messages;
-    const message = messages?.[0];
+    console.log('\n🔔 Webhook recibido:', new Date().toISOString());
+    
+    const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = message?.from;
+    const messageText = message?.text?.body;
 
-    // Log de datos procesados
-    console.log('Mensaje procesado:', {
+    console.log('📝 Mensaje:', {
       from,
-      messageType: message?.type,
-      messageText: message?.text?.body,
-      audioId: message?.audio?.id
+      text: messageText,
+      type: message?.type
     });
 
     if (!message || !from) {
-      console.log("No hay mensaje válido o remitente");
+      console.log("❌ Mensaje inválido");
       return res.sendStatus(200);
     }
 
     // Verificar onboarding
-    const onboardingResponse = await handleOnboarding(from, message?.text?.body);
+    const onboardingResponse = await handleOnboarding(from, messageText);
     if (onboardingResponse) {
-      console.log('Respuesta onboarding:', onboardingResponse);
+      console.log('🆕 Respuesta onboarding:', onboardingResponse);
       await sendWhatsAppMessage(from, onboardingResponse.message);
       if (!onboardingResponse.shouldContinue) {
         return res.sendStatus(200);
       }
     }
 
-    // ... resto del código ...
+    // Procesar mensaje
+    try {
+      console.log('🔄 Procesando mensaje:', messageText);
+      const parsed = await parseReminderWithOpenAI(messageText);
+      console.log('✨ Mensaje parseado:', parsed);
+      
+      if (parsed.type === "reminder") {
+        console.log('⏰ Creando recordatorio:', parsed.data);
+        // Crear y programar recordatorio
+        const reminder = new Reminder({
+          phone: from,
+          title: parsed.data.title,
+          emoji: findBestEmoji(parsed.data.title),
+          date: new Date(parsed.data.date + 'T' + parsed.data.time),
+          notifyAt: new Date(parsed.data.date + 'T' + parsed.data.time)
+        });
 
+        await reminder.save();
+        console.log('💾 Recordatorio guardado:', reminder);
+        
+        const confirmMessage = `¡Listo! Te recordaré "${reminder.title}" ${reminder.emoji} el ${reminder.date.toLocaleString()}`;
+        await sendWhatsAppMessage(from, confirmMessage);
+      } else {
+        console.log('💬 Enviando respuesta:', parsed.content);
+        await sendWhatsAppMessage(from, parsed.content);
+      }
+    } catch (err) {
+      console.error('❌ Error procesando mensaje:', err);
+      await sendWhatsAppMessage(from, "Disculpa, tuve un problema procesando tu mensaje. ¿Podrías intentarlo de nuevo?");
+    }
+
+    return res.sendStatus(200);
   } catch (err) {
-    console.error("Error en webhook:", err);
+    console.error("❌ Error en webhook:", err);
     return res.sendStatus(500);
   }
 });
