@@ -5,39 +5,44 @@ const { handleOnboarding } = require('../middleware/onboarding');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { getGPTResponse, parseReminderWithOpenAI } = require('../services/openai');
 const { downloadWhatsAppAudio, transcribeWithWhisper } = require('../services/audio');
-const { scheduleReminder } = require('../services/scheduler');
 
 router.post("/", async (req, res) => {
   try {
+    // Log del webhook completo
+    console.log('Webhook recibido:', new Date().toISOString());
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+
     const entry = req.body.entry?.[0];
-    const message = entry?.changes?.[0]?.value?.messages?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+    const messages = value?.messages;
+    const message = messages?.[0];
     const from = message?.from;
 
+    // Log de datos procesados
+    console.log('Mensaje procesado:', {
+      from,
+      messageType: message?.type,
+      messageText: message?.text?.body,
+      audioId: message?.audio?.id
+    });
+
     if (!message || !from) {
-      return res.sendStatus(200);
-    }
-
-    // Manejar audio
-    if (message.audio) {
-      // ... lógica de audio ...
-    }
-
-    // Manejar texto
-    const messageText = message?.text?.body;
-    if (!messageText) {
+      console.log("No hay mensaje válido o remitente");
       return res.sendStatus(200);
     }
 
     // Verificar onboarding
-    const onboardingResponse = await handleOnboarding(from, messageText);
+    const onboardingResponse = await handleOnboarding(from, message?.text?.body);
     if (onboardingResponse) {
+      console.log('Respuesta onboarding:', onboardingResponse);
       await sendWhatsAppMessage(from, onboardingResponse.message);
       if (!onboardingResponse.shouldContinue) {
         return res.sendStatus(200);
       }
     }
 
-    // ... resto de la lógica del webhook ...
+    // ... resto del código ...
 
   } catch (err) {
     console.error("Error en webhook:", err);

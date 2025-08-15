@@ -3,7 +3,10 @@ const { whatsappToken, phoneNumberId } = require('../config/environment');
 
 async function sendWhatsAppMessage(to, message) {
   try {
-    await axios.post(
+    console.log('Enviando mensaje a:', to);
+    console.log('Contenido:', message);
+    
+    const response = await axios.post(
       `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
       {
         messaging_product: "whatsapp",
@@ -12,13 +15,21 @@ async function sendWhatsAppMessage(to, message) {
       },
       {
         headers: {
-          Authorization: `Bearer ${whatsappToken}`,
-          "Content-Type": "application/json"
+          'Authorization': `Bearer ${whatsappToken}`,
+          'Content-Type': 'application/json'
         }
       }
     );
+
+    console.log('Mensaje enviado exitosamente:', response.data);
+    return response.data;
   } catch (err) {
-    console.error("Error enviando mensaje WhatsApp:", err.response?.data || err.message);
+    console.error("Error enviando mensaje WhatsApp:", {
+      status: err.response?.status,
+      data: err.response?.data,
+      message: err.message
+    });
+    throw err;
   }
 }
 
