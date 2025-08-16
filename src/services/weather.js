@@ -1,7 +1,7 @@
 const axios = require("axios");
 const { sendWhatsAppMessage } = require("./whatsapp");
 
-// GPT para entender la consulta de clima
+// Usa siempre gpt-3.5-turbo
 async function parseWeatherWithGPT(text) {
   try {
     const systemPrompt = `
@@ -21,7 +21,7 @@ Texto a analizar: "${text}"
     const { data } = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4o-mini",
+        model: "gpt-3.5-turbo",
         messages: [{ role: "system", content: systemPrompt }],
         temperature: 0
       },
@@ -60,12 +60,12 @@ async function getCurrentWeather(lat, lon, cityName, country) {
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&timezone=auto`;
     const { data } = await axios.get(url);
-    if (!data.current_weather) return "No pude obtener el clima ahora mismo.";
+    if (!data.current_weather) return "No pude obtener el clima ahora mismo";
     const temp = data.current_weather.temperature;
     const wind = data.current_weather.windspeed;
     return `🌤️ Clima en ${cityName}, ${country}:\n🌡️ Temp: ${temp}°C\n💨 Viento: ${wind} km/h`;
   } catch (err) {
-    return "No pude obtener el clima ahora mismo.";
+    return "No pude obtener el clima ahora mismo";
   }
 }
 
@@ -80,7 +80,7 @@ async function getForecast(lat, lon, cityName, country, daysAhead = 0) {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto`;
     const { data } = await axios.get(url);
 
-    if (!data.daily) return "No pude obtener el pronóstico.";
+    if (!data.daily) return "No pude obtener el pronóstico";
 
     if (daysAhead > 0 && daysAhead < data.daily.time.length) {
       return `📅 Pronóstico para ${cityName}, ${country} (${formatDate(data.daily.time[daysAhead])}):\n` +
@@ -99,18 +99,25 @@ async function getForecast(lat, lon, cityName, country, daysAhead = 0) {
     }
     return forecastMsg;
   } catch (err) {
-    return "No pude obtener el pronóstico.";
+    return "No pude obtener el pronóstico";
   }
 }
 
-// Handler principal
+// Handler principal de clima
 async function handleWeatherQuery(messageText, from) {
   const parsed = await parseWeatherWithGPT(messageText);
-  if (!parsed || !parsed.city) return false;
+  if (!parsed) {
+    await sendWhatsAppMessage(from, "No pude entender tu consulta de clima");
+    return true;
+  }
+  if (!parsed.city) {
+    await sendWhatsAppMessage(from, "¿Para qué ciudad querés saber el clima?");
+    return true;
+  }
 
   const coords = await getCoordinates(parsed.city);
   if (!coords) {
-    await sendWhatsAppMessage(from, `No pude encontrar la ciudad "${parsed.city}".`);
+    await sendWhatsAppMessage(from, `No pude encontrar la ciudad "${parsed.city}"`);
     return true;
   }
 
