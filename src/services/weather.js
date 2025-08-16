@@ -58,13 +58,26 @@ async function getCoordinates(city) {
 // Clima actual
 async function getCurrentWeather(lat, lon, cityName, country) {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&timezone=auto`;
+    // Usamos la URL con datos horarios y precipitation_probability
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=precipitation_probability&timezone=auto`;
     const { data } = await axios.get(url);
+    
     if (!data.current_weather) return "No pude obtener el clima ahora mismo";
+    
     const temp = data.current_weather.temperature;
     const wind = data.current_weather.windspeed;
-    return `🌤️ Clima en ${cityName}, ${country}:\n🌡️ Temp: ${temp}°C\n💨 Viento: ${wind} km/h`;
+    
+    // Obtener la probabilidad de lluvia de la hora actual
+    const currentHourIndex = data.hourly.time.findIndex(time => 
+      new Date(time).getHours() === new Date().getHours()
+    );
+    
+    const rainProb = currentHourIndex >= 0 ? 
+      data.hourly.precipitation_probability[currentHourIndex] : "N/A";
+    
+    return `🌤️ Clima en ${cityName}, ${country}:\n🌡️ Temp: ${temp}°C\n💨 Viento: ${wind} km/h\n☔ Prob. de lluvia: ${rainProb}%`;
   } catch (err) {
+    console.error("Error obteniendo clima:", err.message);
     return "No pude obtener el clima ahora mismo";
   }
 }

@@ -8,7 +8,8 @@ const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
 
 function isWeatherQuery(text) {
-  return /(clima|tiempo|temperatura|lluvia|pronóstico|pronostico)/i.test(text);
+  // Amplié la lista de palabras para detectar consultas de clima
+  return /(clima|tiempo|temperatura|lluvia|pronóstico|pronostico|llover|lloviendo|soleado|sol|nublado)/i.test(text);
 }
 
 function isGreeting(text) {
@@ -17,6 +18,8 @@ function isGreeting(text) {
 
 // Set para recordar usuarios que ya recibieron respuesta de OpenAI
 const alreadyAnswered = new Set();
+// Set para recordar usuarios esperando ciudad para clima
+const waitingForCity = new Set();
 
 router.post("/", async (req, res) => {
   // Log completo para debug
@@ -42,9 +45,27 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
+  // Si el usuario estaba esperando ciudad para clima, procesar directamente
+  if (waitingForCity.has(from)) {
+    console.log("🌆 Recibida ciudad para consulta de clima pendiente");
+    waitingForCity.delete(from);
+    await handleWeatherQuery(messageText, from); // Tratar el mensaje como nombre de ciudad
+    return res.sendStatus(200);
+  }
+
   // 1. Si es clima, responde clima y termina
   if (isWeatherQuery(messageText)) {
     console.log("🌦️ Consulta de clima detectada");
+    
+    // Verificar si el mensaje tiene una ciudad
+    const cityMatch = messageText.match(/(?:en|para|de)\s+([A-Za-zÁÉÍÓÚáéíóúÑñ\s]+)(\?|$)/i);
+    if (!cityMatch) {
+      console.log("❓ No se detectó ciudad en la consulta de clima");
+      await sendWhatsAppMessage(from, "¿Para qué ciudad querés saber el clima?");
+      waitingForCity.add(from);
+      return res.sendStatus(200);
+    }
+    
     await handleWeatherQuery(messageText, from);
     return res.sendStatus(200);
   }
