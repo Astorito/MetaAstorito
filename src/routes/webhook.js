@@ -19,14 +19,26 @@ function isGreeting(text) {
 const alreadyAnswered = new Set();
 
 router.post("/", async (req, res) => {
-  console.log("🔔 Webhook recibido (raw body):", req.body);
+  // Log completo para debug
+  console.log("🔔 Webhook recibido (raw body):", JSON.stringify(req.body, null, 2));
 
-  const messageText = req.body?.text;
-  const from = req.body?.from;
+  // Extraer datos de la estructura real de WhatsApp
+  let from, messageText;
+  try {
+    const entry = req.body.entry?.[0];
+    const change = entry?.changes?.[0];
+    const message = change?.value?.messages?.[0];
+    from = message?.from;
+    messageText = message?.text?.body;
+  } catch (e) {
+    from = undefined;
+    messageText = undefined;
+  }
 
   console.log("🔔 Webhook recibido:", { from, messageText });
 
   if (!messageText || !from) {
+    console.log("❌ Mensaje inválido");
     return res.sendStatus(200);
   }
 
