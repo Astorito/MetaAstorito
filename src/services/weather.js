@@ -10,11 +10,18 @@ Debes responder SOLO con un JSON que indique:
 - type: "current" si es clima actual, o "forecast" si pide pronóstico.
 - city: nombre de la ciudad.
 - days_ahead: número de días desde hoy para el que se pide el clima (0 = hoy, 1 = mañana, etc.).
+- show_multiple_days: true si la consulta pide pronóstico de varios días o la semana que viene, false si es específico para un solo día.
+
 Si no se especifica el día, usar 0 para "current" y 0 para "forecast".
+Si menciona "próximos días", "semana que viene" o similar, usar show_multiple_days = true.
+
 Ejemplos:
-"Clima en Madrid ahora" -> {"type":"current","city":"Madrid","days_ahead":0}
-"¿Va a llover en Roma mañana?" -> {"type":"forecast","city":"Roma","days_ahead":1}
-"Pronóstico de París para el fin de semana" -> {"type":"forecast","city":"París","days_ahead":2}
+"Clima en Madrid ahora" -> {"type":"current","city":"Madrid","days_ahead":0,"show_multiple_days":false}
+"¿Va a llover en Roma mañana?" -> {"type":"forecast","city":"Roma","days_ahead":1,"show_multiple_days":false}
+"Pronóstico de París para el fin de semana" -> {"type":"forecast","city":"París","days_ahead":2,"show_multiple_days":true}
+"Cómo va a estar el clima la semana que viene" -> {"type":"forecast","city":null,"days_ahead":0,"show_multiple_days":true}
+"Dame el pronóstico de los próximos 3 días" -> {"type":"forecast","city":null,"days_ahead":0,"show_multiple_days":true}
+
 Texto a analizar: "${text}"
     `;
 
@@ -88,29 +95,39 @@ function formatDate(dateStr) {
   return date.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
 }
 
-async function getForecast(lat, lon, cityName, country, daysAhead = 0) {
+async function getForecast(lat, lon, cityName, country, daysAhead = 0, showMultipleDays = false) {
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto`;
     const { data } = await axios.get(url);
 
     if (!data.daily) return "No pude obtener el pronóstico";
 
-    if (daysAhead > 0 && daysAhead < data.daily.time.length) {
+    // Si showMultipleDays es true O se piden los próximos días, mostrar 3 días
+    if (showMultipleDays) {
+      // Mostramos próximos 3 días
+      let forecastMsg = `📅 Pronóstico para ${cityName}, ${country}:\n`;
+      for (let i = 0; i < 3; i++) {
+        forecastMsg += `\n${formatDate(data.daily.time[i])}:\n` +
+                      `🌡️ Max: ${data.daily.temperature_2m_max[i]}°C\n` +
+                      `🌡️ Min: ${data.daily.temperature_2m_min[i]}°C\n` +
+                      `☔ Lluvia: ${data.daily.precipitation_probability_max[i]}%`;
+      }
+      return forecastMsg;
+    }
+
+    // Si es un día específico (hoy, mañana, etc.)
+    if (daysAhead >= 0 && daysAhead < data.daily.time.length) {
       return `📅 Pronóstico para ${cityName}, ${country} (${formatDate(data.daily.time[daysAhead])}):\n` +
              `🌡️ Max: ${data.daily.temperature_2m_max[daysAhead]}°C\n` +
              `🌡️ Min: ${data.daily.temperature_2m_min[daysAhead]}°C\n` +
              `☔ Lluvia: ${data.daily.precipitation_probability_max[daysAhead]}%`;
     }
 
-    // Si no, mostramos próximos 3 días
-    let forecastMsg = `📅 Pronóstico para ${cityName}, ${country}:\n`;
-    for (let i = 0; i < 3; i++) {
-      forecastMsg += `\n${formatDate(data.daily.time[i])}:\n` +
-                     `🌡️ Max: ${data.daily.temperature_2m_max[i]}°C\n` +
-                     `🌡️ Min: ${data.daily.temperature_2m_min[i]}°C\n` +
-                     `☔ Lluvia: ${data.daily.precipitation_probability_max[i]}%`;
-    }
-    return forecastMsg;
+    // Por defecto, mostrar el pronóstico de hoy
+    return `📅 Pronóstico para ${cityName}, ${country} (${formatDate(data.daily.time[0])}):\n` +
+           `🌡️ Max: ${data.daily.temperature_2m_max[0]}°C\n` +
+           `🌡️ Min: ${data.daily.temperature_2m_min[0]}°C\n` +
+           `☔ Lluvia: ${data.daily.precipitation_probability_max[0]}%`;
   } catch (err) {
     return "No pude obtener el pronóstico";
   }
@@ -138,7 +155,8 @@ async function handleWeatherQuery(messageText, from) {
   if (parsed.type === "current") {
     reply = await getCurrentWeather(coords.lat, coords.lon, coords.name, coords.country);
   } else {
-    reply = await getForecast(coords.lat, coords.lon, coords.name, coords.country, parsed.days_ahead);
+    // Pasar el nuevo parámetro showMultipleDays
+    reply = await getForecast(coords.lat, coords.lon, coords.name, coords.country, parsed.days_ahead, parsed.show_multiple_days);
   }
 
   await sendWhatsAppMessage(from, reply);
