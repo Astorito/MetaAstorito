@@ -14,7 +14,7 @@ connectDB();
 startScheduler(); // <-- Agrega esto
 
 // Rutas
-app.use('/', webhookRoutes);
+app.use('/webhook', webhookRoutes);
 
 app.listen(port, () => {
   console.log(`Servidor escuchando en puerto ${port}`);
