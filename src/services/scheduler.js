@@ -1,6 +1,7 @@
 const Reminder = require('../models/reminder');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { DateTime } = require('luxon');
+const { handleWeatherQuery } = require('../services/weather');
 
 async function checkReminders() {
   const now = DateTime.now().setZone('America/Argentina/Buenos_Aires');
@@ -27,5 +28,20 @@ function startScheduler() {
   setInterval(checkReminders, 60 * 1000);
 }
 
+function isWeatherQuery(text) {
+  return /(clima|tiempo|temperatura|lluvia|pronóstico|pronostico)/i.test(text);
+}
+
 module.exports = { startScheduler };
+
+// ...dentro del router.post("/", async (req, res) => { ... }
+
+if (isWeatherQuery(messageText)) {
+  await handleWeatherQuery(messageText, from);
+  return res.sendStatus(200);
+}
+
+// Aquí sigue el flujo de recordatorios:
+const parsed = await parseReminderWithOpenAI(messageText);
+// ...resto del flujo de recordatorios...
 
