@@ -28,27 +28,3 @@ function startScheduler() {
 }
 
 module.exports = { startScheduler };
-
-// ...dentro del router.post("/", async (req, res) => { ... }
-
-if (!messageText || !from) {
-  return res.sendStatus(200);
-}
-
-// 3. Si no, intenta parsear como recordatorio
-try {
-  if (parsed.type === "reminder") {
-    // ...tu lógica para guardar y confirmar el recordatorio...
-    // Ejemplo:
-    // await sendWhatsAppMessage(from, "✅ Recordatorio creado!");
-    // return res.sendStatus(200);
-  } else {
-    // Si no es recordatorio ni clima ni saludo, responde por defecto
-    await sendWhatsAppMessage(from, "No entendí tu mensaje. ¿Querés agendar un recordatorio o consultar el clima?");
-    return res.sendStatus(200);
-  }
-} catch (err) {
-  await sendWhatsAppMessage(from, "Ocurrió un error procesando tu mensaje.");
-  return res.sendStatus(200);
-}
-
