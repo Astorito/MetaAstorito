@@ -35,12 +35,6 @@ if (!messageText || !from) {
   return res.sendStatus(200);
 }
 
-// 2. Si es un saludo, responde saludo y termina
-if (isGreeting(messageText)) {
-  await sendWhatsAppMessage(from, "Hola! ¿En qué puedo ayudarte hoy?");
-  return res.sendStatus(200);
-}
-
 // 3. Si no, intenta parsear como recordatorio
 try {
   const parsed = await parseReminderWithOpenAI(messageText);
