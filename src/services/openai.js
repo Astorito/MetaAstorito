@@ -1,3 +1,4 @@
+const axios = require('axios');
 const { openaiToken, model } = require('../config/environment');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: openaiToken });
@@ -5,26 +6,35 @@ const { DateTime } = require('luxon');
 
 async function getGPTResponse(text) {
   try {
-    const response = await openai.chat.completions.create({
-      model: model,
-      messages: [
-        {
-          role: "system",
-          content: "Eres un asistente ultra conciso. REGLAS IMPORTANTES:\n" +
-            "1. Responde en máximo 2 líneas\n" +
-            "2. No uses saludos ni despedidas\n" +
-            "3. Ve directo al punto\n" +
-            "4. Si la pregunta es sobre fecha u hora, responde solo el dato\n" +
-            "5. Usa datos actuales y precisos\n" +
-            "6. No termines la respuesta con punto final"
-        },
-        { role: "user", content: text }
-      ],
-      temperature: 0.2,
-      max_tokens: 60
-    });
+    const systemPrompt =
+      "Eres un asistente ultra conciso. REGLAS IMPORTANTES:\n" +
+      "1. Responde en máximo 2 líneas\n" +
+      "2. No uses saludos ni despedidas\n" +
+      "3. Ve directo al punto\n" +
+      "4. Si la pregunta es sobre fecha u hora, responde solo el dato\n" +
+      "5. Usa datos actuales y precisos\n" +
+      "6. No termines la respuesta con punto final";
 
-    let content = response.choices[0].message.content.trim();
+    const { data } = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: text }
+        ],
+        temperature: 0.2,
+        max_tokens: 60
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    let content = data.choices[0].message.content.trim();
     // Elimina el punto final si existe
     if (content.endsWith('.')) {
       content = content.slice(0, -1);

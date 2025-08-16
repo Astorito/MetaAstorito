@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { handleWeatherQuery } = require('../services/weather');
-const { parseReminderWithOpenAI } = require('../services/openai');
+const { parseReminderWithOpenAI, getGPTResponse } = require('../services/openai');
 const Reminder = require('../models/reminder');
 const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
@@ -14,6 +14,9 @@ function isWeatherQuery(text) {
 function isGreeting(text) {
   return /^(hola|buenas|buen día|buenas tardes|buenas noches)$/i.test(text.trim());
 }
+
+// Set para recordar usuarios que ya recibieron respuesta de OpenAI
+const alreadyAnswered = new Set();
 
 router.post("/", async (req, res) => {
   const messageText = req.body?.text;
@@ -84,8 +87,17 @@ router.post("/", async (req, res) => {
       await sendWhatsAppMessage(from, confirmMessage);
       return res.sendStatus(200);
     } else {
-      // Si no es reminder, responde por defecto
-      await sendWhatsAppMessage(from, "No entendí tu mensaje. ¿Querés agendar un recordatorio o consultar el clima?");
+      // Si no es reminder, responde con OpenAI solo la primera vez
+      if (!alreadyAnswered.has(from)) {
+        const gpt = await getGPTResponse(messageText);
+        let respuesta = gpt.content;
+        if (respuesta.endsWith('.')) respuesta = respuesta.slice(0, -1);
+        respuesta += "\n\nPara otras consultas entra a https://chatgpt.com/";
+        await sendWhatsAppMessage(from, respuesta);
+        alreadyAnswered.add(from);
+      } else {
+        await sendWhatsAppMessage(from, "Hola!\nPara esas consultas te recomiendo entrar a : https://chatgpt.com/\nNos vemos!");
+      }
       return res.sendStatus(200);
     }
   } catch (err) {
