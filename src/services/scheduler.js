@@ -29,8 +29,3 @@ function startScheduler() {
 
 module.exports = { startScheduler };
 
-// En el flujo donde se recibe un mensaje
-if (await handleWeatherQuery(messageText, from)) {
-  return res.sendStatus(200);
-}
-// ...luego el flujo de recordatorios...
