@@ -37,7 +37,6 @@ if (!messageText || !from) {
 
 // 3. Si no, intenta parsear como recordatorio
 try {
-  const parsed = await parseReminderWithOpenAI(messageText);
   if (parsed.type === "reminder") {
     // ...tu lógica para guardar y confirmar el recordatorio...
     // Ejemplo:
