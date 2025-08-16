@@ -1,7 +1,6 @@
 const Reminder = require('../models/reminder');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { DateTime } = require('luxon');
-const { handleWeatherQuery } = require('../services/weather');
 
 async function checkReminders() {
   const now = DateTime.now().setZone('America/Argentina/Buenos_Aires');
@@ -26,14 +25,6 @@ async function checkReminders() {
 
 function startScheduler() {
   setInterval(checkReminders, 60 * 1000);
-}
-
-function isWeatherQuery(text) {
-  return /(clima|tiempo|temperatura|lluvia|pronóstico|pronostico)/i.test(text);
-}
-
-function isGreeting(text) {
-  return /^(hola|buenas|buen día|buenas tardes|buenas noches)$/i.test(text.trim());
 }
 
 module.exports = { startScheduler };
