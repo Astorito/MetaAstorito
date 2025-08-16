@@ -27,20 +27,6 @@ function startScheduler() {
   setInterval(checkReminders, 60 * 1000);
 }
 
-async function handleWeatherQuery(messageText, from) {
-  const parsed = await parseWeatherWithGPT(messageText);
-  if (!parsed) {
-    await sendWhatsAppMessage(from, "No pude entender tu consulta de clima.");
-    return true;
-  }
-  if (!parsed.city) {
-    await sendWhatsAppMessage(from, "¿Para qué ciudad querés saber el clima?");
-    return true;
-  }
-
-  // ...resto del código...
-}
-
 module.exports = { startScheduler };
 
 // En el flujo donde se recibe un mensaje
