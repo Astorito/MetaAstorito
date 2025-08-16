@@ -1,6 +1,5 @@
 const express = require('express');
 const { connectDB } = require('./src/config/database');
-const { port } = require('./src/config/environment');
 const webhookRoutes = require('./src/routes/webhook');
 const { startScheduler } = require('./src/services/scheduler'); // <-- Agrega esto
 
@@ -14,8 +13,9 @@ connectDB();
 startScheduler(); // <-- Agrega esto
 
 // Rutas
-app.use('/webhook', webhookRoutes);
+app.use('/', webhookRoutes);
 
+const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Servidor escuchando en puerto ${port}`);
 });

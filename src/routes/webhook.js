@@ -22,18 +22,22 @@ router.post("/", async (req, res) => {
   const messageText = req.body?.text;
   const from = req.body?.from;
 
+  console.log("🔔 Webhook recibido:", { from, messageText });
+
   if (!messageText || !from) {
     return res.sendStatus(200);
   }
 
   // 1. Si es clima, responde clima y termina
   if (isWeatherQuery(messageText)) {
+    console.log("🌦️ Consulta de clima detectada");
     await handleWeatherQuery(messageText, from);
     return res.sendStatus(200);
   }
 
   // 2. Si es un saludo, responde saludo y termina
   if (isGreeting(messageText)) {
+    console.log("👋 Saludo detectado");
     await sendWhatsAppMessage(from, "Hola! En qué puedo ayudarte hoy?");
     return res.sendStatus(200);
   }
