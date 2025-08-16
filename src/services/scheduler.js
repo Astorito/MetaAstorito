@@ -28,3 +28,5 @@ function startScheduler() {
 }
 
 module.exports = { startScheduler };
+
+app.use('/', webhookRoutes);
