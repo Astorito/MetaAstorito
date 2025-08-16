@@ -4,7 +4,7 @@ const webhookRoutes = require('./src/routes/webhook');
 const { startScheduler } = require('./src/services/scheduler'); // <-- Agrega esto
 
 const app = express();
-app.use(express.json());
+app.use(express.json()); // <--- Esto es fundamental
 
 // Conectar a MongoDB
 connectDB();

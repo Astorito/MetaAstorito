@@ -19,6 +19,8 @@ function isGreeting(text) {
 const alreadyAnswered = new Set();
 
 router.post("/", async (req, res) => {
+  console.log("🔔 Webhook recibido (raw body):", req.body);
+
   const messageText = req.body?.text;
   const from = req.body?.from;
 
