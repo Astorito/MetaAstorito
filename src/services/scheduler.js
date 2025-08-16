@@ -37,7 +37,7 @@ if (!messageText || !from) {
 
 // 2. Si es un saludo, responde saludo y termina
 if (isGreeting(messageText)) {
-  await sendWhatsAppMessage(from, "Hola! En qué puedo ayudarte hoy?");
+  await sendWhatsAppMessage(from, "¡Hola! ¿En qué puedo ayudarte hoy?");
   return res.sendStatus(200);
 }
 
