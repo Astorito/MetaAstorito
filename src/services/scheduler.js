@@ -44,12 +44,6 @@ if (!messageText || !from) {
   return res.sendStatus(200);
 }
 
-// 1. Si es clima, responde clima y termina
-if (isWeatherQuery(messageText)) {
-  await handleWeatherQuery(messageText, from);
-  return res.sendStatus(200);
-}
-
 // 2. Si es un saludo, responde saludo y termina
 if (isGreeting(messageText)) {
   await sendWhatsAppMessage(from, "Hola! En qué puedo ayudarte hoy?");
