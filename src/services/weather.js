@@ -211,13 +211,25 @@ async function handleWeatherQuery(message, phone) {
     let city;
     const context = getContext(phone);
     
-    // Detectar si es una pregunta de seguimiento como "¿y hoy?" o "¿y mañana?"
-    const isFollowUpQuestion = /^(y|que tal|como esta|cómo está|va a|va a estar)?\s*(hoy|mañana|ahora|esta tarde|esta noche|pasado mañana)?\??$/i.test(message.trim());
+    // Detectar si es una pregunta de seguimiento - EXPRESIÓN REGULAR MEJORADA
+    const isFollowUpQuestion = /^(y|que tal|como esta|cómo está|va a|va a estar|hay|estará|estara)?\s*(hoy|mañana|ahora|esta tarde|esta noche|pasado mañana|proximos dias|próximos días|siguiente semana|la semana que viene)?\??$/i.test(message.trim()) || 
+    // Esta segunda parte detecta patrones como "Y en los próximos días?"
+    /^y\s+(en|para)\s+(los|el|la|las)?\s*(próximos?|proximos?|siguientes?|resto de los)?\s*(dias?|semanas?|horas?).*$/i.test(message.trim());
     
     if (isFollowUpQuestion && context && context.lastCity) {
       // Si es pregunta de seguimiento y tenemos contexto, usar la ciudad del contexto
       city = context.lastCity;
       console.log(`🧠 Usando ciudad del contexto: ${city}`);
+      
+      // Si la pregunta es sobre "próximos días" pero no lo especifica explícitamente,
+      // forzar el modo de pronóstico de múltiples días
+      if (message.toLowerCase().includes("proxim") || 
+          message.toLowerCase().includes("próxim") ||
+          message.toLowerCase().includes("siguient")) {
+        // Forzar consulta de múltiples días
+        message = `clima en ${city} para los próximos 3 días`;
+        console.log(`🔄 Reformulando consulta: "${message}"`);
+      }
     } else {
       // Si no, intentar extraer ciudad del mensaje
       city = extractCityFromQuery(message);
@@ -238,7 +250,7 @@ async function handleWeatherQuery(message, phone) {
       lastTopic: "clima" 
     });
     
-    // Usar wttr.in en lugar de OpenWeather (sin API key)
+    // Usar wttr.in
     console.log(`🔍 Consultando clima para ${city} con wttr.in`);
     
     // Asegurarnos de usar Spanish y obtener 3 días de pronóstico
