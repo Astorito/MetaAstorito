@@ -3,13 +3,12 @@ const router = express.Router();
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { handleWeatherQuery } = require('../services/weather');
 const { parseReminderWithOpenAI, getGPTResponse } = require('../services/openai');
-const { handleAudioMessage } = require('../services/transcription');
 const Reminder = require('../models/reminder');
 const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
 
 function isWeatherQuery(text) {
-  // Palabras clave para detectar consultas de clima
+  // Amplié la lista de palabras para detectar consultas de clima
   return /(clima|tiempo|temperatura|lluvia|pronóstico|pronostico|llover|lloviendo|soleado|sol|nublado)/i.test(text);
 }
 
@@ -27,7 +26,7 @@ router.post("/", async (req, res) => {
   console.log("🔔 Webhook recibido (raw body):", JSON.stringify(req.body, null, 2));
 
   // Extraer datos de la estructura de WhatsApp
-  let from, messageText, messageType, audioId;
+  let from, messageText;
   try {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
@@ -36,45 +35,21 @@ router.post("/", async (req, res) => {
     
     if (message) {
       from = message.from;
-      messageType = message.type;
       
-      // Extraer texto o ID de audio según el tipo de mensaje
-      if (messageType === 'text') {
+      // Solo extraemos texto (eliminamos manejo de audio)
+      if (message.type === 'text') {
         messageText = message.text?.body;
-      } else if (messageType === 'audio' && message.audio) {
-        audioId = message.audio.id;
-        console.log("🎤 Audio ID detectado:", audioId);
       }
     }
   } catch (e) {
     console.error('Error extrayendo datos del mensaje:', e);
   }
 
-  console.log("🔔 Webhook procesando:", { from, messageType, audioId, messageText });
+  console.log("🔔 Webhook procesando:", { from, messageText });
 
   if (!from) {
     console.log("❌ Mensaje sin remitente");
     return res.sendStatus(200);
-  }
-
-  // MANEJAR AUDIO: si es un mensaje de audio, procesarlo
-  if (messageType === 'audio' && audioId) {
-    console.log("🎤 Procesando mensaje de audio");
-    
-    // Mostrar que estamos procesando el audio
-    await sendWhatsAppMessage(from, "🔄 Procesando tu mensaje de voz...");
-    
-    // Procesar el audio y obtener la transcripción
-    messageText = await handleAudioMessage(audioId, from);
-    
-    // Si no obtuvimos transcripción, terminamos
-    if (!messageText) {
-      await sendWhatsAppMessage(from, "❌ Lo siento, no pude procesar tu mensaje de voz.");
-      return res.sendStatus(200);
-    }
-    
-    console.log("🎤 Audio procesado como comando:", messageText);
-    // Continúa con el flujo normal usando la transcripción como mensaje
   }
 
   // Verificar que tenemos texto para procesar
@@ -178,7 +153,6 @@ router.post("/", async (req, res) => {
       return res.sendStatus(200);
     }
   } catch (err) {
-    console.error("❌ Error procesando mensaje:", err);
     await sendWhatsAppMessage(from, "Ocurrió un error procesando tu mensaje.");
     return res.sendStatus(200);
   }
