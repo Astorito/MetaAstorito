@@ -3,11 +3,72 @@ const { sendWhatsAppMessage } = require('./whatsapp');
 const { saveContext, getContext } = require('./context');
 const { DateTime } = require('luxon');
 
+// Función para traducir descripciones del clima al español si vienen en inglés
+function translateWeatherDescription(description) {
+  const translations = {
+    'clear': 'Despejado',
+    'sunny': 'Soleado',
+    'partly cloudy': 'Parcialmente nublado',
+    'cloudy': 'Nublado',
+    'overcast': 'Cubierto',
+    'mist': 'Niebla ligera',
+    'fog': 'Niebla',
+    'light rain': 'Lluvia ligera',
+    'patchy rain possible': 'Posibilidad de lluvia dispersa',
+    'rain': 'Lluvia',
+    'moderate rain': 'Lluvia moderada',
+    'heavy rain': 'Lluvia fuerte',
+    'light snow': 'Nieve ligera',
+    'snow': 'Nieve',
+    'heavy snow': 'Nevada fuerte',
+    'thunderstorm': 'Tormenta eléctrica',
+    'storm': 'Tormenta',
+    'freezing rain': 'Lluvia helada'
+  };
+  
+  // Verificar si la descripción está en inglés y traducirla
+  const lowerDescription = description.toLowerCase();
+  for (const [english, spanish] of Object.entries(translations)) {
+    if (lowerDescription === english.toLowerCase() || lowerDescription.includes(english.toLowerCase())) {
+      return spanish;
+    }
+  }
+  
+  // Si no coincide con nuestras traducciones, devolver la descripción original
+  return description;
+}
+
+// Función para determinar el emoji según la descripción del clima
+function getWeatherEmoji(description) {
+  const desc = description.toLowerCase();
+  
+  if (desc.includes("lluvia") || desc.includes("llovizna") || desc.includes("precipita")) {
+    return "🌧️";
+  } else if (desc.includes("tormenta")) {
+    return "⛈️";
+  } else if (desc.includes("nieve")) {
+    return "❄️";
+  } else if (desc.includes("niebla") || desc.includes("bruma")) {
+    return "🌫️";
+  } else if (desc.includes("nub")) {
+    return "☁️";
+  } else if (desc.includes("sol") || desc.includes("despejado") || desc.includes("clear")) {
+    return "☀️";
+  }
+  
+  // Emoji predeterminado
+  return "🌤️";
+}
+
 // Detectar qué día está consultando el usuario
 function extractDateFromQuery(text) {
   text = text.toLowerCase();
   
-  if (text.includes("mañana")) {
+  if (text.includes("proximos 3 dias") || text.includes("próximos 3 días") || 
+      text.includes("proximos tres dias") || text.includes("próximos tres días") || 
+      text.includes("3 dias siguientes") || text.includes("tres dias siguientes")) {
+    return { day: -1, label: "para los próximos 3 días", multiDay: true };
+  } else if (text.includes("mañana")) {
     return { day: 1, label: "para mañana" };
   } else if (text.includes("pasado mañana")) {
     return { day: 2, label: "para pasado mañana" };
@@ -20,9 +81,56 @@ function extractDateFromQuery(text) {
   }
 }
 
+// Función para formatear pronóstico de múltiples días
+function formatMultiDayForecast(data, city) {
+  try {
+    let forecast = `🌤️ Clima en ${city} para los próximos 3 días:\n\n`;
+    
+    // Procesar cada día del pronóstico (hasta 3 días)
+    const daysToShow = Math.min(data.weather.length, 3);
+    
+    for (let i = 0; i < daysToShow; i++) {
+      const dayData = data.weather[i];
+      const date = DateTime.fromFormat(dayData.date, 'yyyy-MM-dd');
+      const dayName = date.toFormat('cccc', { locale: 'es' });
+      const maxTemp = dayData.maxtempC;
+      const minTemp = dayData.mintempC;
+      
+      // Usar datos del mediodía para el pronóstico
+      const noonData = dayData.hourly[4]; // índice 4 = mediodía aprox
+      let description = noonData.weatherDesc[0].value;
+      const windSpeed = Math.round(noonData.windspeedKmph);
+      const rainProb = noonData.chanceofrain || "0";
+      
+      // Asegurarnos que la descripción esté en español
+      description = translateWeatherDescription(description);
+      
+      // Determinar emoji según descripción
+      let emoji = getWeatherEmoji(description);
+      
+      // Formatear día
+      forecast += `📅 *${dayName.charAt(0).toUpperCase() + dayName.slice(1)}*\n`;
+      forecast += `${emoji} ${description}\n`;
+      forecast += `🌡️ Max: ${maxTemp}°C / Min: ${minTemp}°C\n`;
+      forecast += `☔ Lluvia: ${rainProb}%\n`;
+      forecast += `💨 Viento: ${windSpeed} km/h\n\n`;
+    }
+    
+    return forecast;
+  } catch (error) {
+    console.error('Error formateando pronóstico multi-día:', error);
+    return `🌤️ *Clima en ${city}*\n\nNo pude obtener el pronóstico de varios días.`;
+  }
+}
+
 // Formato para el mensaje de clima usando wttr.in
 function formatWeatherMessageFromWttr(data, city, dateInfo) {
   try {
+    // Si es una solicitud de pronóstico para varios días
+    if (dateInfo.multiDay) {
+      return formatMultiDayForecast(data, city);
+    }
+    
     // Determinar qué día del pronóstico usar (0=hoy, 1=mañana, etc.)
     const dayIndex = dateInfo.day;
     
@@ -56,27 +164,14 @@ function formatWeatherMessageFromWttr(data, city, dateInfo) {
       rainProb = noonData.chanceofrain || "0";
     }
     
+    // Asegurar que la descripción esté en español
+    description = translateWeatherDescription(description);
+    
     // Determinar emoji según descripción
-    let emoji = "🌤️";
-    const desc = description.toLowerCase();
-    if (desc.includes("lluvia") || desc.includes("llovizna") || desc.includes("precipita")) {
-      emoji = "🌧️";
-    } else if (desc.includes("tormenta")) {
-      emoji = "⛈️";
-    } else if (desc.includes("nieve")) {
-      emoji = "❄️";
-    } else if (desc.includes("niebla") || desc.includes("bruma")) {
-      emoji = "🌫️";
-    } else if (desc.includes("nub")) {
-      emoji = "☁️";
-    } else if (desc.includes("sol") || desc.includes("despejado") || desc.includes("clear")) {
-      emoji = "☀️";
-    }
+    let emoji = getWeatherEmoji(description);
     
-    // Construir mensaje con el nuevo formato
-    const dayLabel = dateInfo.label === "para hoy" ? "" : ` ${dateInfo.label}`;
-    
-    return `${emoji} Clima en ${city}${dayLabel}: ☁️ ${description}\n\n` +
+    // Construir mensaje con el nuevo formato - siempre incluimos el dayLabel
+    return `${emoji} Clima en ${city} ${dateInfo.label}: ☁️ ${description}\n\n` +
            `🌡️ Max: ${maxTemp}°C\n` +
            `🌡️ Min: ${minTemp}°C\n` +
            `☔ Lluvia: ${rainProb}%\n` +
