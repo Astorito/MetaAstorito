@@ -5,9 +5,11 @@ const { handleWeatherQuery } = require('../services/weather');
 const { parseReminderWithOpenAI, getGPTResponse } = require('../services/openai');
 const { handleAudioMessage } = require('../services/transcription');
 const Reminder = require('../models/reminder');
+const User = require('../models/user'); // Importamos el modelo de usuario
 const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
 
+// Funciones auxiliares...
 function isWeatherQuery(text) {
   return /(clima|tiempo|temperatura|lluvia|pronóstico|pronostico|llover|lloviendo|soleado|sol|nublado)/i.test(text);
 }
@@ -16,10 +18,32 @@ function isGreeting(text) {
   return /^(hola|buenas|buen día|buenas tardes|buenas noches)$/i.test(text.trim());
 }
 
+function isGeneralQuery(text) {
+  const generalQueryPatterns = [
+    /qué día es hoy/i,
+    /qué fecha es/i,
+    /qué hora es/i,
+    /cuál es la hora/i,
+    /qué día de la semana es/i,
+    /fecha actual/i,
+    /hora actual/i,
+    /cómo estás/i,
+    /quién eres/i,
+    /qué haces/i,
+    /para qué sirves/i,
+    /cuál es tu nombre/i,
+    /cómo te llamas/i,
+  ];
+  
+  return generalQueryPatterns.some(pattern => pattern.test(text));
+}
+
 // Set para recordar usuarios que ya recibieron respuesta de OpenAI
 const alreadyAnswered = new Set();
 // Set para recordar usuarios esperando ciudad para clima
 const waitingForCity = new Set();
+// Objeto para seguimiento del onboarding
+const onboardingState = {};
 
 router.post("/", async (req, res) => {
   // Log completo para debug
@@ -48,7 +72,7 @@ router.post("/", async (req, res) => {
         messageText = message.text?.body;
       } else if (messageType === 'audio' && message.audio) {
         audioId = message.audio.id;
-        console.log("�� Audio ID detectado:", audioId);
+        console.log("🎤 Audio ID detectado:", audioId);
       }
     }
   } catch (e) {
@@ -62,16 +86,22 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
+  // Buscar usuario o crear uno nuevo si no existe
+  let user = await User.findOne({ phone: from });
+  if (!user) {
+    user = new User({ phone: from });
+    await user.save();
+    console.log("👤 Nuevo usuario creado:", from);
+  }
+
   // MANEJAR AUDIO: si es un mensaje de audio, procesarlo
   if (messageType === 'audio' && audioId) {
     console.log("🎤 Procesando mensaje de audio");
     
-    // No enviamos mensaje de notificación de procesamiento
-    
     // Procesar el audio y obtener la transcripción
     messageText = await handleAudioMessage(audioId, from);
     
-    // Si no obtuvimos transcripción, terminamos sin enviar mensaje de error
+    // Si no obtuvimos transcripción, terminamos
     if (!messageText) {
       console.log("❌ No se pudo transcribir el audio");
       return res.sendStatus(200);
@@ -87,6 +117,44 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
+  // Manejo del proceso de onboarding
+  if (onboardingState[from]) {
+    // Estamos en proceso de onboarding
+    if (onboardingState[from].step === 1) {
+      // El usuario acaba de responder con su nombre
+      const userName = messageText.trim();
+      
+      // Guardar nombre en la base de datos
+      user.name = userName;
+      await user.save();
+      console.log(`👤 Nombre de usuario actualizado: ${userName} para ${from}`);
+      
+      onboardingState[from].name = userName;
+      onboardingState[from].step = 2;
+      
+      // Segundo mensaje de onboarding con las capacidades
+      const welcomeMessage = 
+        `Genial ${userName}!\n\n` +
+        "Puedo ayudarte con:\n\n" +
+        "🗓️ *Recordatorios*: Dime algo como \"Recuérdame reunión con Juan mañana a las 3 pm\"\n\n" +
+        "🌤️ *Clima*: Pregúntame \"¿Cómo está el clima en Buenos Aires?\"\n\n" +
+        "🎙️ *Mensajes de voz*: También puedes enviarme notas de voz y las entenderé\n\n" +
+        "Además con Astorito Premium podrás:\n" +
+        "📋 Generar Listas - Supermercado, viajes, etc\n" +
+        "❓ Consultas Generales\n" +
+        "📅 Armar tu cronograma de la semana\n" +
+        "🔄 Conectarlo con tu Google Calendar\n\n" +
+        "¿En qué puedo ayudarte hoy?";
+      
+      await sendWhatsAppMessage(from, welcomeMessage);
+      return res.sendStatus(200);
+    } else {
+      // Ya completó el onboarding, eliminar el estado
+      delete onboardingState[from];
+      // Continuar con el flujo normal
+    }
+  }
+
   // Si el usuario estaba esperando ciudad para clima, procesar directamente
   if (waitingForCity.has(from)) {
     console.log("🌆 Recibida ciudad para consulta de clima pendiente");
@@ -95,7 +163,27 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // 1. Si es clima, responde clima y termina
+  // 1. Si es un saludo y no ha pasado por onboarding, iniciar onboarding
+  if (isGreeting(messageText)) {
+    console.log("👋 Saludo detectado - Iniciando onboarding");
+    
+    // Si ya tenemos su nombre, no preguntar de nuevo
+    if (user && user.name && user.name !== 'Usuario') {
+      const welcomeBack = `¡Hola de nuevo ${user.name}! ¿En qué puedo ayudarte hoy?`;
+      await sendWhatsAppMessage(from, welcomeBack);
+      return res.sendStatus(200);
+    }
+    
+    // Iniciar onboarding paso 1
+    onboardingState[from] = { step: 1 };
+    await sendWhatsAppMessage(from, "¡Hola! Soy Astorito, gracias por escribirme. ¿Cómo es tu nombre?");
+    return res.sendStatus(200);
+  }
+
+  // El resto del código sigue igual...
+  // (clima, consultas generales, recordatorios, etc.)
+
+  // 2. Si es clima, responde clima y termina
   if (isWeatherQuery(messageText)) {
     console.log("🌦️ Consulta de clima detectada");
     
@@ -112,14 +200,26 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // 2. Si es un saludo, responde saludo y termina
-  if (isGreeting(messageText)) {
-    console.log("👋 Saludo detectado");
-    await sendWhatsAppMessage(from, "Hola! En qué puedo ayudarte hoy?");
-    return res.sendStatus(200);
+  // 3. Si es una consulta general, responder directamente con GPT
+  if (isGeneralQuery(messageText)) {
+    console.log("❓ Consulta general detectada, respondiendo con GPT");
+    try {
+      const gpt = await getGPTResponse(messageText);
+      let respuesta = gpt.content;
+      
+      // Añadir mensaje informativo sobre el propósito de Astorito
+      respuesta += "\n\n✨ Recuerda que Astorito está diseñado principalmente para recordatorios y consultas del clima. Para otras preguntas generales, te recomiendo usar https://chatgpt.com/";
+      
+      await sendWhatsAppMessage(from, respuesta);
+      return res.sendStatus(200);
+    } catch (err) {
+      console.error("❌ Error obteniendo respuesta de GPT:", err);
+      await sendWhatsAppMessage(from, "Lo siento, no pude procesar tu consulta en este momento.");
+      return res.sendStatus(200);
+    }
   }
 
-  // 3. Si no, intenta parsear como recordatorio
+  // 4. Si no es ninguna de las anteriores, intenta parsear como recordatorio
   try {
     const parsed = await parseReminderWithOpenAI(messageText);
 
@@ -168,17 +268,15 @@ router.post("/", async (req, res) => {
       await sendWhatsAppMessage(from, confirmMessage);
       return res.sendStatus(200);
     } else {
-      // Si no es reminder, responde con OpenAI solo la primera vez
-      if (!alreadyAnswered.has(from)) {
-        const gpt = await getGPTResponse(messageText);
-        let respuesta = gpt.content;
-        if (respuesta.endsWith('.')) respuesta = respuesta.slice(0, -1);
-        respuesta += "\n\nPara otras consultas entra a https://chatgpt.com/";
-        await sendWhatsAppMessage(from, respuesta);
-        alreadyAnswered.add(from);
-      } else {
-        await sendWhatsAppMessage(from, "Hola!\nPara esas consultas te recomiendo entrar a : https://chatgpt.com/\nNos vemos!");
-      }
+      // Si no es reminder, responde con OpenAI
+      console.log("🤖 No se reconoció como recordatorio, respondiendo con GPT");
+      const gpt = await getGPTResponse(messageText);
+      let respuesta = gpt.content;
+      
+      // Siempre añadir el mensaje informativo
+      respuesta += "\n\n✨ Recuerda que Astorito está diseñado principalmente para recordatorios y consultas del clima. Para otras preguntas generales, te recomiendo usar https://chatgpt.com/";
+      
+      await sendWhatsAppMessage(from, respuesta);
       return res.sendStatus(200);
     }
   } catch (err) {
