@@ -18,10 +18,10 @@ async function checkReminders() {
     for (const reminder of reminders) {
       const eventDate = DateTime.fromJSDate(reminder.date).setZone('America/Argentina/Buenos_Aires');
       const notifyMsg =
-        `⏰ ¡Recordatorio!\n\n` +
+        `⏰ Recordatorio!\n\n` +
         `${reminder.emoji} *${reminder.title}*\n` +
         `📅 ${eventDate.toFormat("EEEE d 'de' MMMM", { locale: 'es' })} a las ${eventDate.toFormat('HH:mm')}\n\n` +
-        `_¡No lo olvides!_`;
+        `No te olvides!`;
 
       console.log(`📤 Enviando recordatorio a ${reminder.phone}: ${reminder.title}`);
       await sendWhatsAppMessage(reminder.phone, notifyMsg);

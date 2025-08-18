@@ -77,22 +77,20 @@ async function transcribeAudio(filePath) {
 }
 
 // Manejar mensajes de audio
-async function handleAudioMessage(message, from, token) {
+async function handleAudioMessage(audioId, from, token) {
   try {
-    // Informar al usuario que estamos procesando
-    await sendWhatsAppMessage(from, "🎤 Transcribiendo audio, un momento...");
+    // Indicar que estamos procesando (opcional, puedes eliminar esta línea también)
+    await sendWhatsAppMessage(from, "🎤 Procesando tu mensaje...");
     
     // Descargar el archivo de audio
-    const audioPath = await downloadAudio(message.audio.id, token);
+    const audioPath = await downloadAudio(audioId, token);
     
     // Transcribir el audio
     const transcription = await transcribeAudio(audioPath);
     
-    // Enviar la transcripción
-    await sendWhatsAppMessage(from, `📝 Transcripción:\n\n"${transcription}"`);
+    // NO enviamos la transcripción, simplemente la devolvemos para procesarla
+    console.log(`🎤 Audio transcrito: "${transcription}"`);
     
-    // Una vez que tenemos la transcripción, podemos procesarla como si fuera un mensaje de texto
-    // Esto permite que los comandos por voz funcionen igual que los de texto
     return transcription;
   } catch (error) {
     console.error('Error procesando audio:', error);
@@ -110,19 +108,22 @@ const { handleAudioMessage } = require('../services/transcription');
 // Después de extraer los datos de la estructura de WhatsApp
 
 // Extraer datos de la estructura real de WhatsApp
-let from, messageText, messageType, message;
+let from, messageText, messageType, audioId;
 try {
   const entry = req.body.entry?.[0];
   const change = entry?.changes?.[0];
   const value = change?.value;
-  message = value?.messages?.[0];
+  const message = value?.messages?.[0];
   
   if (message) {
     from = message.from;
     messageType = message.type;
     
+    // Extraer texto o audio según el tipo
     if (messageType === 'text') {
       messageText = message.text?.body;
+    } else if (messageType === 'audio') {
+      audioId = message.audio?.id;
     }
   }
 } catch (e) {
@@ -136,20 +137,22 @@ if (!from) {
   return res.sendStatus(200);
 }
 
-// Si es un mensaje de audio, procesarlo
-if (messageType === 'audio' && message.audio) {
-  console.log("🎤 Mensaje de audio recibido");
-  // Procesar el audio y obtener la transcripción
+// MANEJAR AUDIO: si es un mensaje de audio, procesarlo
+if (messageType === 'audio' && audioId) {
+  console.log("🎤 Mensaje de audio recibido, ID:", audioId);
   const token = process.env.WHATSAPP_TOKEN;
-  messageText = await handleAudioMessage(message, from, token);
   
-  // Si no pudimos procesar el audio, terminar
+  // Procesar el audio y obtener la transcripción directamente como texto
+  messageText = await handleAudioMessage(audioId, from, token);
+  
+  // Si no obtuvimos transcripción, terminamos
   if (!messageText) {
     return res.sendStatus(200);
   }
   
-  console.log("🎤 Audio transcrito exitosamente:", messageText);
-  // Continuar al flujo normal con la transcripción
+  // No mostramos la transcripción, simplemente continuamos con el flujo
+  console.log("🎤 Audio procesado como comando:", messageText);
+  // Continúa con el flujo normal usando la transcripción como mensaje
 }
 
 // VERIFICACIÓN: Asegurarse de tener texto para procesar
