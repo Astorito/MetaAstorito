@@ -9,6 +9,9 @@ const checkEnvVars = () => {
     if (!process.env.OPENAI_API_KEY) {
         console.error("⚠️ Variable de entorno OPENAI_API_KEY no configurada");
     }
+    if (!process.env.OPENAI_PROJECT_ID) {
+        console.error("⚠️ Variable de entorno OPENAI_PROJECT_ID no configurada");
+    }
 };
 
 // Ejecutar verificación al cargar el módulo
@@ -47,11 +50,16 @@ const transcript_audio = async (media_id) => {
 
         // Verificar API key de OpenAI
         const openaiKey = process.env.OPENAI_API_KEY;
+        const openaiProjectId = process.env.OPENAI_PROJECT_ID;
+        
         if (!openaiKey) {
             throw new Error("OPENAI_API_KEY no configurada");
         }
         
         console.log("🔑 Usando OPENAI_API_KEY:", openaiKey.substring(0, 5) + "...");
+        if (openaiProjectId) {
+            console.log("🔑 Usando OPENAI_PROJECT_ID");
+        }
 
         // Crear objeto FormData para enviar a OpenAI
         let formData = new FormData();
@@ -62,14 +70,22 @@ const transcript_audio = async (media_id) => {
         formData.append("model", "whisper-1");
         formData.append("language", "es");
 
+        // Configurar cabeceras incluyendo OpenAI-Project si está definido
+        const headers = {
+            Authorization: "Bearer " + openaiKey,
+            ...formData.getHeaders()
+        };
+        
+        // Añadir OpenAI-Project a las cabeceras si está configurado
+        if (openaiProjectId) {
+            headers["OpenAI-Project"] = openaiProjectId;
+        }
+
         // Enviar a OpenAI para transcripción
         const openai_transcription = await axios({
             method: "post",
             url: "https://api.openai.com/v1/audio/transcriptions",
-            headers: {
-                Authorization: "Bearer " + openaiKey,
-                ...formData.getHeaders(),
-            },
+            headers: headers,
             maxBodyLength: Infinity,
             data: formData,
         });
@@ -95,7 +111,7 @@ async function handleAudioMessage(audioId, from) {
         // Transcribir el audio
         const transcription = await transcript_audio(audioId);
         
-        // No enviamos la transcripción, solo la devolvemos para procesarla como comando
+        // Log de la transcripción pero no la enviamos como mensaje
         console.log(`🎙️ Transcripción: "${transcription}"`);
         
         return transcription;

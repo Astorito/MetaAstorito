@@ -48,7 +48,7 @@ router.post("/", async (req, res) => {
         messageText = message.text?.body;
       } else if (messageType === 'audio' && message.audio) {
         audioId = message.audio.id;
-        console.log("🎤 Audio ID detectado:", audioId);
+        console.log("�� Audio ID detectado:", audioId);
       }
     }
   } catch (e) {
@@ -66,15 +66,14 @@ router.post("/", async (req, res) => {
   if (messageType === 'audio' && audioId) {
     console.log("🎤 Procesando mensaje de audio");
     
-    // Mostrar que estamos procesando el audio
-    await sendWhatsAppMessage(from, "🔄 Procesando tu mensaje de voz...");
+    // No enviamos mensaje de notificación de procesamiento
     
     // Procesar el audio y obtener la transcripción
     messageText = await handleAudioMessage(audioId, from);
     
-    // Si no obtuvimos transcripción, terminamos
+    // Si no obtuvimos transcripción, terminamos sin enviar mensaje de error
     if (!messageText) {
-      await sendWhatsAppMessage(from, "❌ Lo siento, no pude procesar tu mensaje de voz.");
+      console.log("❌ No se pudo transcribir el audio");
       return res.sendStatus(200);
     }
     
