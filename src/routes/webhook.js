@@ -226,8 +226,8 @@ router.post("/", async (req, res) => {
           const gpt = await getGPTResponse(messageText);
           let respuesta = gpt.content;
           
-          // Añadir mensaje informativo
-          respuesta += "\n\n✨ Recuerda que Astorito está diseñado principalmente para recordatorios y consultas del clima. Para otras preguntas generales, te recomiendo usar https://chatgpt.com/";
+          // Añadir mensaje informativo (MODIFICADO)
+          respuesta += "\n\n✨Para otras preguntas generales, te recomiendo usar https://chatgpt.com/";
           
           await sendWhatsAppMessage(from, respuesta);
         } catch (err) {
