@@ -2,44 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { handleWeatherQuery } = require('../services/weather');
-const { parseReminderWithOpenAI, getGPTResponse } = require('../services/openai');
+const { parseReminderWithOpenAI, getGPTResponse, classifyMessage } = require('../services/openai');
 const { handleAudioMessage } = require('../services/transcription');
 const Reminder = require('../models/reminder');
-const User = require('../models/user'); // Importamos el modelo de usuario
+const User = require('../models/user');
 const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
+const { getContext, clearContext } = require('../services/context');
 
-// Funciones auxiliares...
-function isWeatherQuery(text) {
-  return /(clima|tiempo|temperatura|lluvia|pronóstico|pronostico|llover|lloviendo|soleado|sol|nublado)/i.test(text);
-}
-
-function isGreeting(text) {
-  return /^(hola|buenas|buen día|buenas tardes|buenas noches)$/i.test(text.trim());
-}
-
-function isGeneralQuery(text) {
-  const generalQueryPatterns = [
-    /qué día es hoy/i,
-    /qué fecha es/i,
-    /qué hora es/i,
-    /cuál es la hora/i,
-    /qué día de la semana es/i,
-    /fecha actual/i,
-    /hora actual/i,
-    /cómo estás/i,
-    /quién eres/i,
-    /qué haces/i,
-    /para qué sirves/i,
-    /cuál es tu nombre/i,
-    /cómo te llamas/i,
-  ];
-  
-  return generalQueryPatterns.some(pattern => pattern.test(text));
-}
-
-// Set para recordar usuarios que ya recibieron respuesta de OpenAI
-const alreadyAnswered = new Set();
 // Set para recordar usuarios esperando ciudad para clima
 const waitingForCity = new Set();
 // Objeto para seguimiento del onboarding
@@ -163,8 +133,8 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // 1. Si es un saludo y no ha pasado por onboarding, iniciar onboarding
-  if (isGreeting(messageText)) {
+  // Verificar si es un saludo para iniciar onboarding
+  if (/^(hola|buenas|buen día|buenas tardes|buenas noches)$/i.test(messageText.trim())) {
     console.log("👋 Saludo detectado - Iniciando onboarding");
     
     // Si ya tenemos su nombre, no preguntar de nuevo
@@ -180,104 +150,91 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // El resto del código sigue igual...
-  // (clima, consultas generales, recordatorios, etc.)
-
-  // 2. Si es clima, responde clima y termina
-  if (isWeatherQuery(messageText)) {
-    console.log("🌦️ Consulta de clima detectada");
-    
-    // Verificar si el mensaje tiene una ciudad
-    const cityMatch = messageText.match(/(?:en|para|de)\s+([A-Za-zÁÉÍÓÚáéíóúÑñ\s]+)(\?|$)/i);
-    if (!cityMatch) {
-      console.log("❓ No se detectó ciudad en la consulta de clima");
-      await sendWhatsAppMessage(from, "¿Para qué ciudad querés saber el clima?");
-      waitingForCity.add(from);
-      return res.sendStatus(200);
-    }
-    
-    await handleWeatherQuery(messageText, from);
-    return res.sendStatus(200);
-  }
-
-  // 3. Si es una consulta general, responder directamente con GPT
-  if (isGeneralQuery(messageText)) {
-    console.log("❓ Consulta general detectada, respondiendo con GPT");
-    try {
-      const gpt = await getGPTResponse(messageText);
-      let respuesta = gpt.content;
-      
-      // Añadir mensaje informativo sobre el propósito de Astorito
-      respuesta += "\n\n✨ Recuerda que Astorito está diseñado principalmente para recordatorios y consultas del clima. Para otras preguntas generales, te recomiendo usar https://chatgpt.com/";
-      
-      await sendWhatsAppMessage(from, respuesta);
-      return res.sendStatus(200);
-    } catch (err) {
-      console.error("❌ Error obteniendo respuesta de GPT:", err);
-      await sendWhatsAppMessage(from, "Lo siento, no pude procesar tu consulta en este momento.");
-      return res.sendStatus(200);
-    }
-  }
-
-  // 4. Si no es ninguna de las anteriores, intenta parsear como recordatorio
+  // NUEVA IMPLEMENTACIÓN: Clasificar el mensaje con OpenAI
   try {
-    const parsed = await parseReminderWithOpenAI(messageText);
+    console.log("🔍 Clasificando mensaje con OpenAI...");
+    const messageCategory = await classifyMessage(messageText);
+    console.log(`📊 Categoría del mensaje: ${messageCategory}`);
 
-    if (parsed.type === "reminder") {
-      // Validar datos
-      if (!parsed.data.date || !parsed.data.time) {
-        await sendWhatsAppMessage(from, "Faltan datos para crear el recordatorio (fecha y hora). ¿Podés especificarlos?");
+    // Procesar según la categoría
+    switch (messageCategory) {
+      case 'CLIMA':
+        console.log("🌦️ Consulta de clima detectada");
+        
+        // Manejar la consulta de clima (la función handleWeatherQuery ya tiene la lógica de contexto)
+        await handleWeatherQuery(messageText, from);
         return res.sendStatus(200);
-      }
+        
+      case 'RECORDATORIO':
+        console.log("🗓️ Solicitud de recordatorio detectada");
+        const parsed = await parseReminderWithOpenAI(messageText);
 
-      // Crear y guardar el recordatorio (usa Luxon para fechas)
-      const eventDate = DateTime.fromISO(`${parsed.data.date}T${parsed.data.time}`);
-      if (!eventDate.isValid) {
-        await sendWhatsAppMessage(from, "La fecha y hora del recordatorio no son válidas. Por favor, revisá el mensaje.");
+        if (parsed.type === "reminder") {
+          // Validar datos
+          if (!parsed.data.date || !parsed.data.time) {
+            await sendWhatsAppMessage(from, "Faltan datos para crear el recordatorio (fecha y hora). ¿Podés especificarlos?");
+            return res.sendStatus(200);
+          }
+
+          // Crear y guardar el recordatorio (usa Luxon para fechas)
+          const eventDate = DateTime.fromISO(`${parsed.data.date}T${parsed.data.time}`);
+          if (!eventDate.isValid) {
+            await sendWhatsAppMessage(from, "La fecha y hora del recordatorio no son válidas. Por favor, revisá el mensaje.");
+            return res.sendStatus(200);
+          }
+
+          // Calcula notifyAt según el campo "notify"
+          let notifyAt = eventDate;
+          if (parsed.data.notify?.includes('hora')) {
+            const horas = parseInt(parsed.data.notify);
+            notifyAt = eventDate.minus({ hours: horas });
+          } else if (parsed.data.notify?.includes('minuto')) {
+            const minutos = parseInt(parsed.data.notify);
+            notifyAt = eventDate.minus({ minutes: minutos });
+          }
+
+          const reminder = new Reminder({
+            phone: from,
+            title: parsed.data.title,
+            emoji: findBestEmoji(parsed.data.title),
+            date: eventDate.toJSDate(),
+            notifyAt: notifyAt.toJSDate(),
+            sent: false
+          });
+
+          await reminder.save();
+
+          const confirmMessage =
+            `✅ Recordatorio creado!\n\n` +
+            `${reminder.emoji} *${reminder.title}*\n` +
+            `📅 Fecha: ${eventDate.toFormat("EEEE d 'de' MMMM", { locale: 'es' })} a las ${eventDate.toFormat('HH:mm')}\n` +
+            `⏰ Te avisaré: ${notifyAt.toFormat("EEEE d 'de' MMMM", { locale: 'es' })} a las ${notifyAt.toFormat('HH:mm')}\n\n` +
+            `Avisanos si querés agendar otro evento!`;
+
+          await sendWhatsAppMessage(from, confirmMessage);
+        } else {
+          // Si no se pudo extraer los datos del recordatorio
+          await sendWhatsAppMessage(from, "No pude entender los detalles del recordatorio. Por favor, especifica fecha, hora y descripción del evento.");
+        }
         return res.sendStatus(200);
-      }
-
-      // Calcula notifyAt según el campo "notify"
-      let notifyAt = eventDate;
-      if (parsed.data.notify?.includes('hora')) {
-        const horas = parseInt(parsed.data.notify);
-        notifyAt = eventDate.minus({ hours: horas });
-      } else if (parsed.data.notify?.includes('minuto')) {
-        const minutos = parseInt(parsed.data.notify);
-        notifyAt = eventDate.minus({ minutes: minutos });
-      }
-
-      const reminder = new Reminder({
-        phone: from,
-        title: parsed.data.title,
-        emoji: findBestEmoji(parsed.data.title),
-        date: eventDate.toJSDate(),
-        notifyAt: notifyAt.toJSDate(),
-        sent: false
-      });
-
-      await reminder.save();
-
-      const confirmMessage =
-        `✅ Recordatorio creado!\n\n` +
-        `${reminder.emoji} *${reminder.title}*\n` +
-        `📅 Fecha: ${eventDate.toFormat("EEEE d 'de' MMMM", { locale: 'es' })} a las ${eventDate.toFormat('HH:mm')}\n` +
-        `⏰ Te avisaré: ${notifyAt.toFormat("EEEE d 'de' MMMM", { locale: 'es' })} a las ${notifyAt.toFormat('HH:mm')}\n\n` +
-        `Avisanos si querés agendar otro evento!`;
-
-      await sendWhatsAppMessage(from, confirmMessage);
-      return res.sendStatus(200);
-    } else {
-      // Si no es reminder, responde con OpenAI
-      console.log("🤖 No se reconoció como recordatorio, respondiendo con GPT");
-      const gpt = await getGPTResponse(messageText);
-      let respuesta = gpt.content;
-      
-      // Siempre añadir el mensaje informativo
-      respuesta += "\n\n✨ Recuerda que Astorito está diseñado principalmente para recordatorios y consultas del clima. Para otras preguntas generales, te recomiendo usar https://chatgpt.com/";
-      
-      await sendWhatsAppMessage(from, respuesta);
-      return res.sendStatus(200);
+        
+      case 'GENERALQUERY':
+      default:
+        console.log("❓ Consulta general detectada");
+        try {
+          // Obtener respuesta corta de GPT
+          const gpt = await getGPTResponse(messageText);
+          let respuesta = gpt.content;
+          
+          // Añadir mensaje informativo
+          respuesta += "\n\n✨ Recuerda que Astorito está diseñado principalmente para recordatorios y consultas del clima. Para otras preguntas generales, te recomiendo usar https://chatgpt.com/";
+          
+          await sendWhatsAppMessage(from, respuesta);
+        } catch (err) {
+          console.error("❌ Error obteniendo respuesta de GPT:", err);
+          await sendWhatsAppMessage(from, "Lo siento, no pude procesar tu consulta en este momento.");
+        }
+        return res.sendStatus(200);
     }
   } catch (err) {
     console.error("❌ Error procesando mensaje:", err);
@@ -287,13 +244,3 @@ router.post("/", async (req, res) => {
 });
 
 module.exports = router;
-// Agregar al inicio del archivo, después de los requires:
-const { getContext, clearContext } = require('../services/context');
-
-// Luego, modificar el procesamiento de categoría CLIMA en el switch:
-case 'CLIMA':
-  console.log("🌦️ Consulta de clima detectada");
-  
-  // Manejar la consulta de clima (la función handleWeatherQuery ya tiene la lógica de contexto)
-  await handleWeatherQuery(messageText, from);
-  return res.sendStatus(200);
