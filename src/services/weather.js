@@ -6,6 +6,7 @@ const { DateTime } = require('luxon');
 // Función para traducir descripciones del clima al español si vienen en inglés
 function translateWeatherDescription(description) {
   const translations = {
+    // Traducciones existentes
     'clear': 'Despejado',
     'sunny': 'Soleado',
     'partly cloudy': 'Parcialmente nublado',
@@ -23,18 +24,57 @@ function translateWeatherDescription(description) {
     'heavy snow': 'Nevada fuerte',
     'thunderstorm': 'Tormenta eléctrica',
     'storm': 'Tormenta',
-    'freezing rain': 'Lluvia helada'
+    'freezing rain': 'Lluvia helada',
+    
+    // Nuevas traducciones
+    'drizzle': 'Llovizna',
+    'light drizzle': 'Llovizna ligera',
+    'moderate drizzle': 'Llovizna moderada',
+    'heavy drizzle': 'Llovizna intensa',
+    'patchy light drizzle': 'Llovizna ligera dispersa',
+    'patchy light rain': 'Lluvia ligera dispersa',
+    'patchy moderate rain': 'Lluvia moderada dispersa',
+    'patchy heavy rain': 'Lluvia fuerte dispersa',
+    'patchy snow': 'Nevada dispersa',
+    'patchy sleet': 'Aguanieve dispersa',
+    'sleet': 'Aguanieve',
+    'ice': 'Hielo',
+    'heavy cloud': 'Muy nublado',
+    'light cloud': 'Ligeramente nublado',
+    'showers': 'Chubascos',
+    'light showers': 'Chubascos ligeros',
+    'shower': 'Chubasco',
+    'mostly cloudy': 'Mayormente nublado',
+    'broken clouds': 'Nubes dispersas',
+    'few clouds': 'Pocas nubes',
+    'scattered clouds': 'Nubes aisladas',
+    'haze': 'Calima',
+    'smoke': 'Humo',
+    'dust': 'Polvo',
+    'sand': 'Arena',
+    'hail': 'Granizo',
+    'thundery outbreaks': 'Brotes tormentosos'
   };
   
   // Verificar si la descripción está en inglés y traducirla
   const lowerDescription = description.toLowerCase();
+  
+  // Primero intentar una coincidencia exacta
+  if (translations[lowerDescription]) {
+    console.log(`🔤 Traduciendo: "${description}" → "${translations[lowerDescription]}"`);
+    return translations[lowerDescription];
+  }
+  
+  // Si no hay coincidencia exacta, buscar coincidencias parciales
   for (const [english, spanish] of Object.entries(translations)) {
-    if (lowerDescription === english.toLowerCase() || lowerDescription.includes(english.toLowerCase())) {
+    if (lowerDescription.includes(english.toLowerCase())) {
+      console.log(`🔤 Traduciendo (parcial): "${description}" → "${spanish}"`);
       return spanish;
     }
   }
   
-  // Si no coincide con nuestras traducciones, devolver la descripción original
+  // Si no se encontró traducción, registrarlo y devolver la descripción original
+  console.log(`⚠️ Sin traducción para: "${description}"`);
   return description;
 }
 
