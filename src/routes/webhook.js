@@ -9,7 +9,6 @@ const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
 
 function isWeatherQuery(text) {
-  // Palabras clave para detectar consultas de clima
   return /(clima|tiempo|temperatura|lluvia|pronóstico|pronostico|llover|lloviendo|soleado|sol|nublado)/i.test(text);
 }
 
@@ -25,6 +24,12 @@ const waitingForCity = new Set();
 router.post("/", async (req, res) => {
   // Log completo para debug
   console.log("🔔 Webhook recibido (raw body):", JSON.stringify(req.body, null, 2));
+
+  // Verificar si es una notificación de estado (no debemos procesarla)
+  if (req.body.entry?.[0]?.changes?.[0]?.value?.statuses) {
+    console.log("ℹ️ Ignorando notificación de estado de mensaje");
+    return res.sendStatus(200);
+  }
 
   // Extraer datos de la estructura de WhatsApp
   let from, messageText, messageType, audioId;

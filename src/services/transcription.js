@@ -1,9 +1,25 @@
 const axios = require('axios');
 const FormData = require('form-data');
 
+// Verificar variables de entorno al inicio
+const checkEnvVars = () => {
+    if (!process.env.WHATSAPP_TOKEN) {
+        console.error("⚠️ Variable de entorno WHATSAPP_TOKEN no configurada");
+    }
+    if (!process.env.OPENAI_API_KEY) {
+        console.error("⚠️ Variable de entorno OPENAI_API_KEY no configurada");
+    }
+};
+
+// Ejecutar verificación al cargar el módulo
+checkEnvVars();
+
 const transcript_audio = async (media_id) => {
     try {
         const token = process.env.WHATSAPP_TOKEN;
+        if (!token) {
+            throw new Error("WHATSAPP_TOKEN no configurado");
+        }
         
         // Obtener información del archivo de audio desde Facebook Graph API
         const media = await axios({
@@ -29,6 +45,14 @@ const transcript_audio = async (media_id) => {
         console.log("📥 Audio descargado:", file.data.length, "bytes");
         const buffer = Buffer.from(file.data);
 
+        // Verificar API key de OpenAI
+        const openaiKey = process.env.OPENAI_API_KEY;
+        if (!openaiKey) {
+            throw new Error("OPENAI_API_KEY no configurada");
+        }
+        
+        console.log("🔑 Usando OPENAI_API_KEY:", openaiKey.substring(0, 5) + "...");
+
         // Crear objeto FormData para enviar a OpenAI
         let formData = new FormData();
         formData.append("file", buffer, {
@@ -43,7 +67,7 @@ const transcript_audio = async (media_id) => {
             method: "post",
             url: "https://api.openai.com/v1/audio/transcriptions",
             headers: {
-                Authorization: "Bearer " + process.env.OPENAI_API_KEY,
+                Authorization: "Bearer " + openaiKey,
                 ...formData.getHeaders(),
             },
             maxBodyLength: Infinity,
@@ -54,6 +78,11 @@ const transcript_audio = async (media_id) => {
         return openai_transcription.data.text;
     } catch (error) {
         console.error("❌ Error transcribiendo audio:", error.message);
+        // Log más detallado para diagnóstico
+        if (error.response) {
+            console.error(`  Status: ${error.response.status}`);
+            console.error(`  Data:`, error.response.data);
+        }
         throw error; // Propagar el error
     }
 };
