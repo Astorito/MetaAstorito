@@ -2,38 +2,57 @@ const axios = require('axios');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { saveContext, getContext } = require('./context');
 
-// Formato para el mensaje de clima
-function formatWeatherMessage(data, city) {
-  // Extraer datos principales
-  const temp = Math.round(data.main.temp);
-  const feels_like = Math.round(data.main.feels_like);
-  const description = data.weather[0].description;
-  const humidity = data.main.humidity;
-  const windSpeed = Math.round(data.wind.speed * 3.6); // m/s a km/h
-  
-  // Determinar emoji según descripción
-  let emoji = "🌤️";
-  if (description.includes("lluvia") || description.includes("llovizna")) {
-    emoji = "🌧️";
-  } else if (description.includes("tormenta")) {
-    emoji = "⛈️";
-  } else if (description.includes("nieve")) {
-    emoji = "❄️";
-  } else if (description.includes("niebla") || description.includes("bruma")) {
-    emoji = "🌫️";
-  } else if (description.includes("nub")) {
-    emoji = "☁️";
-  } else if (description.includes("sol") || description.includes("despejado")) {
-    emoji = "☀️";
+// Formato para el mensaje de clima usando wttr.in
+function formatWeatherMessageFromWttr(data, city) {
+  try {
+    // Extraer datos principales
+    const current = data.current_condition[0];
+    const temp = current.temp_C;
+    const feels_like = current.FeelsLikeC;
+    const description = current.weatherDesc[0].value;
+    const humidity = current.humidity;
+    const windSpeed = Math.round(current.windspeedKmph);
+    
+    // Obtener probabilidad de lluvia (del pronóstico del día actual)
+    let rainProb = "No disponible";
+    if (data.weather && data.weather[0] && data.weather[0].hourly) {
+      // Buscar la hora más cercana al momento actual
+      const now = new Date();
+      const currentHour = now.getHours();
+      // Encontrar el índice de hora más cercana (cada 3 horas: 0, 3, 6, 9, 12, 15, 18, 21)
+      const hourIndex = Math.floor(currentHour / 3);
+      if (data.weather[0].hourly[hourIndex]) {
+        rainProb = `${data.weather[0].hourly[hourIndex].chanceofrain}%`;
+      }
+    }
+    
+    // Determinar emoji según descripción
+    let emoji = "🌤️";
+    const desc = description.toLowerCase();
+    if (desc.includes("lluvia") || desc.includes("llovizna")) {
+      emoji = "🌧️";
+    } else if (desc.includes("tormenta")) {
+      emoji = "⛈️";
+    } else if (desc.includes("nieve")) {
+      emoji = "❄️";
+    } else if (desc.includes("niebla") || desc.includes("bruma")) {
+      emoji = "🌫️";
+    } else if (desc.includes("nub")) {
+      emoji = "☁️";
+    } else if (desc.includes("sol") || desc.includes("despejado")) {
+      emoji = "☀️";
+    }
+    
+    // Construir mensaje
+    return `${emoji} *Clima en ${city}*\n\n` +
+           `🌡️ ${temp}°C\n` +
+           `☁️ ${description}\n` +
+           `🌧️ ${rainProb}\n` +
+           `💨 ${windSpeed} km/h`;
+  } catch (error) {
+    console.error('Error formateando respuesta de wttr.in:', error);
+    return `🌤️ *Clima en ${city}*\n\nInformación disponible pero con formato limitado.`;
   }
-  
-  // Construir mensaje
-  return `${emoji} *Clima en ${city}*\n\n` +
-         `Temperatura: ${temp}°C\n` +
-         `Sensación térmica: ${feels_like}°C\n` +
-         `Condición: ${description}\n` +
-         `Humedad: ${humidity}%\n` +
-         `Viento: ${windSpeed} km/h`;
 }
 
 // Extraer la ciudad del mensaje
@@ -88,24 +107,12 @@ async function handleWeatherQuery(message, phone) {
       lastTopic: "clima" 
     });
     
-    // Llamar a la API de OpenWeather
-    const apiKey = process.env.OPENWEATHER_API_KEY;
-    if (!apiKey) {
-      console.error("❌ Falta API key de OpenWeather");
-      return await sendWhatsAppMessage(phone, "Lo siento, no puedo consultar el clima en este momento.");
-    }
-    
-    const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather`, {
-      params: {
-        q: city,
-        appid: apiKey,
-        units: 'metric',
-        lang: 'es'
-      }
-    });
+    // Usar wttr.in en lugar de OpenWeather (sin API key)
+    console.log(`🔍 Consultando clima para ${city} con wttr.in`);
+    const response = await axios.get(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=es`);
     
     // Enviar mensaje formateado
-    const weatherMessage = formatWeatherMessage(response.data, city);
+    const weatherMessage = formatWeatherMessageFromWttr(response.data, city);
     await sendWhatsAppMessage(phone, weatherMessage);
     
     console.log(`✅ Información del clima enviada para ${city}`);
@@ -113,12 +120,8 @@ async function handleWeatherQuery(message, phone) {
   } catch (error) {
     console.error('❌ Error consultando el clima:', error.message);
     
-    // Si es error 404, la ciudad no existe
-    if (error.response && error.response.status === 404) {
-      await sendWhatsAppMessage(phone, `No pude encontrar información para esa ciudad. ¿Podrías verificar el nombre?`);
-    } else {
-      await sendWhatsAppMessage(phone, `Ocurrió un error al consultar el clima. Intenta nuevamente más tarde.`);
-    }
+    // Error genérico
+    await sendWhatsAppMessage(phone, `No pude obtener el clima para esa ubicación. Intenta con otra ciudad o verifica el nombre.`);
   }
 }
 

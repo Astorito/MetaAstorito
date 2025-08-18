@@ -1,5 +1,6 @@
 // Importar las dependencias necesarias
 const OpenAI = require('openai');
+const { DateTime } = require('luxon');
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -60,12 +61,21 @@ async function getGPTResponse(prompt) {
 // Analizar recordatorio con OpenAI
 async function parseReminderWithOpenAI(text) {
   try {
+    // Obtener la fecha actual para pasarla como contexto
+    const today = DateTime.now().toFormat('yyyy-MM-dd');
+    const currentTime = DateTime.now().toFormat('HH:mm');
+    
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
-          content: `Extrae los detalles del recordatorio del mensaje del usuario. 
+          content: `Extrae los detalles del recordatorio del mensaje del usuario.
+          HOY ES: ${today} y la hora actual es ${currentTime}.
+          
+          Cuando el usuario mencione palabras como "hoy", "mañana", "pasado mañana", etc.,
+          resuelve a la fecha correcta basándote en la fecha actual proporcionada.
+          
           Devuelve un JSON con el siguiente formato:
           {
             "type": "reminder",
@@ -87,7 +97,32 @@ async function parseReminderWithOpenAI(text) {
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]);
+      
+      // Verificación adicional para fechas relativas
+      if (parsed.type === "reminder" && parsed.data && parsed.data.date) {
+        // Verificar si la fecha parece incorrecta
+        const eventDate = DateTime.fromISO(parsed.data.date);
+        const currentDate = DateTime.now();
+        
+        // Si la fecha es más de 60 días en el pasado o más de 365 días en el futuro, probablemente es incorrecta
+        if (eventDate < currentDate.minus({days: 60}) || eventDate > currentDate.plus({days: 365})) {
+          console.warn("⚠️ Fecha sospechosa detectada:", parsed.data.date);
+          
+          // Si el mensaje contiene "hoy", usar la fecha actual
+          if (text.toLowerCase().includes("hoy")) {
+            parsed.data.date = currentDate.toFormat("yyyy-MM-dd");
+            console.log("🔄 Corrigiendo fecha a HOY:", parsed.data.date);
+          } 
+          // Si contiene "mañana", usar mañana
+          else if (text.toLowerCase().includes("mañana") || text.toLowerCase().includes("manana")) {
+            parsed.data.date = currentDate.plus({days: 1}).toFormat("yyyy-MM-dd");
+            console.log("🔄 Corrigiendo fecha a MAÑANA:", parsed.data.date);
+          }
+        }
+      }
+      
+      return parsed;
     } else {
       return { type: "unknown" };
     }
