@@ -1,142 +1,104 @@
-const axios = require('axios');
-const { openaiToken, model } = require('../config/environment');
+// Importar las dependencias necesarias
 const OpenAI = require('openai');
-const openai = new OpenAI({ apiKey: openaiToken });
-const { DateTime } = require('luxon');
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-async function getGPTResponse(text) {
+// Clasificar el tipo de mensaje
+async function classifyMessage(text) {
   try {
-    const systemPrompt =
-      "Eres un asistente ultra conciso. REGLAS IMPORTANTES:\n" +
-      "1. Responde en máximo 2 líneas\n" +
-      "2. No uses saludos ni despedidas\n" +
-      "3. Ve directo al punto\n" +
-      "4. Si la pregunta es sobre fecha u hora, responde solo el dato\n" +
-      "5. Usa datos actuales y precisos\n" +
-      "6. No termines la respuesta con punto final";
-
-    const { data } = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        model: "gpt-3.5-turbo",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: text }
-        ],
-        temperature: 0.2,
-        max_tokens: 60
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    let content = data.choices[0].message.content.trim();
-    // Elimina el punto final si existe
-    if (content.endsWith('.')) {
-      content = content.slice(0, -1);
-    }
-    return {
-      type: "chat",
-      content
-    };
-  } catch (err) {
-    console.error("Error consultando a GPT:", err);
-    return {
-      type: "error",
-      content: "Disculpa, no pude procesar tu consulta"
-    };
-  }
-}
-
-async function parseReminderWithOpenAI(text) {
-  // Verificar si solo tiene hora sin especificar AM/PM
-  const timePattern = /\b(\d{1,2})(?::?(\d{2}))?\b/;
-  const match = text.match(timePattern);
-    
-  if (match && !text.toLowerCase().includes('am') && 
-      !text.toLowerCase().includes('pm') &&
-      !text.toLowerCase().includes('tarde') &&
-      !text.toLowerCase().includes('mañana') &&
-      !text.toLowerCase().includes('noche')) {
-      
-    return {
-      type: "confirm_time",
-      data: {
-        originalText: text,
-        hour: match[1],
-        minutes: match[2] || "00"
-      },
-      buttons: {
-        title: "¿A qué hora del día?",
-        buttons: ["Mañana", "Tarde"]
-      }
-    };
-  }
-  
-  // Primero verificar si parece un recordatorio
-  const reminderKeywords = [
-    'recordar', 'recordame', 'avisame', 'agenda', 'agendar',
-    'mañana', 'hoy', 'siguiente', 'proximo', 'próximo',
-    'reunión', 'reunion', 'cita', 'evento', 'buscar',
-    'a las', 'el dia', 'el día', 'avisar'
-  ];
-
-  const hasReminderKeywords = reminderKeywords.some(keyword => 
-    text.toLowerCase().includes(keyword)
-  );
-
-  if (!hasReminderKeywords) {
-    return await getGPTResponse(text);
-  }
-
-  try {
-    const now = DateTime.now();
-    const currentDate = now.toFormat('yyyy-MM-dd');
-
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
-          content: `Eres un asistente que extrae información de recordatorios en español.
-          REGLAS ESTRICTAS PARA FECHAS Y HORAS:
-          
-          HOY ES: ${currentDate}
-          
-          - Si el texto menciona una hora (ej: "1930"), interpretarla como "19:30"
-          - Si dice "avisar antes", extraer cuánto tiempo antes en el campo notify
-          - Si no especifica fecha, asumir que es para hoy
-          - El formato de hora debe ser HH:mm (24 horas)
-          
-          DEBES responder en este formato JSON:
-          {
-            "title": "título del evento",
-            "date": "YYYY-MM-DD",
-            "time": "HH:mm",
-            "notify": "X minutos/horas antes"
-          }`
+          content: `Eres un asistente que clasifica mensajes en categorías específicas. 
+          Categoriza el mensaje del usuario EXACTAMENTE en una de estas categorías:
+          - CLIMA: Si pregunta sobre el clima, temperatura, lluvia, pronóstico, etc.
+          - RECORDATORIO: Si quiere crear un recordatorio, agendar una cita o evento.
+          - GENERALQUERY: Para cualquier otra consulta general.
+          Responde ÚNICAMENTE con la categoría en mayúsculas, sin explicaciones adicionales.`
         },
-        {
-          role: "user",
-          content: text
-        }
+        { role: "user", content: text }
       ],
-      temperature: 0.3
+      max_tokens: 10
     });
-
-    const parsed = JSON.parse(response.choices[0].message.content);
-    return { type: "reminder", data: parsed };
-  } catch (err) {
-    console.error("Error parseando recordatorio:", err);
-    return {
-      type: "error",
-      content: "No pude entender bien el recordatorio. ¿Podrías reformularlo?"
-    };
+    
+    // Obtener solo la categoría (eliminar posibles espacios)
+    const category = response.choices[0].message.content.trim();
+    console.log(`🧠 Mensaje clasificado como: ${category}`);
+    return category;
+  } catch (error) {
+    console.error('❌ Error clasificando mensaje:', error);
+    return "GENERALQUERY"; // Por defecto
   }
 }
 
-module.exports = { parseReminderWithOpenAI, getGPTResponse };
+// Obtener respuesta general de GPT (versión ULTRA corta)
+async function getGPTResponse(prompt) {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: "Eres un asistente extremadamente conciso. MÁXIMO 15 PALABRAS por respuesta. Sin introducciones ni conclusiones. Solo datos esenciales. Directo y preciso. Prioriza brevedad absoluta sobre cualquier otra consideración."
+        },
+        { role: "user", content: prompt }
+      ],
+      max_tokens: 60, // Reducido para forzar respuestas más cortas
+      temperature: 0.3 // Reducida para respuestas más predecibles y concretas
+    });
+    
+    return response.choices[0].message;
+  } catch (error) {
+    console.error('Error en OpenAI API:', error);
+    throw error;
+  }
+}
+
+// Analizar recordatorio con OpenAI
+async function parseReminderWithOpenAI(text) {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: `Extrae los detalles del recordatorio del mensaje del usuario. 
+          Devuelve un JSON con el siguiente formato:
+          {
+            "type": "reminder",
+            "data": {
+              "title": "Título o descripción del evento",
+              "date": "YYYY-MM-DD", (fecha del evento)
+              "time": "HH:MM", (hora del evento en formato 24h)
+              "notify": "X horas/minutos antes" (cuánto tiempo antes avisar)
+            }
+          }
+          Si no es posible extraer algún campo, déjalo como null. Si no es un recordatorio, devuelve {"type": "unknown"}`
+        },
+        { role: "user", content: text }
+      ]
+    });
+    
+    // Extraer el JSON de la respuesta
+    const content = response.choices[0].message.content;
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    } else {
+      return { type: "unknown" };
+    }
+  } catch (error) {
+    console.error('Error extrayendo recordatorio:', error);
+    return { type: "unknown" };
+  }
+}
+
+module.exports = {
+  getGPTResponse,
+  parseReminderWithOpenAI,
+  classifyMessage
+};
