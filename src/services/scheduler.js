@@ -56,37 +56,6 @@ async function checkReminders() {
   }
 }
 
-// En la sección donde se crea el recordatorio en webhook.js (snippet parcial)
-
-// Crear y guardar el recordatorio (usa Luxon para fechas)
-const eventDate = DateTime.fromISO(`${parsed.data.date}T${parsed.data.time}`)
-                  .setZone('America/Argentina/Buenos_Aires');
-
-if (!eventDate.isValid) {
-  await sendWhatsAppMessage(from, "La fecha y hora del recordatorio no son válidas. Por favor, revisá el mensaje.");
-  return res.sendStatus(200);
-}
-
-// Calcula notifyAt según el campo "notify"
-let notifyAt = eventDate;
-if (parsed.data.notify?.includes('hora')) {
-  const horas = parseInt(parsed.data.notify);
-  notifyAt = eventDate.minus({ hours: horas });
-} else if (parsed.data.notify?.includes('minuto')) {
-  const minutos = parseInt(parsed.data.notify);
-  notifyAt = eventDate.minus({ minutes: minutos });
-}
-
-// Convertir a fechas JavaScript con la zona horaria correcta
-const reminder = new Reminder({
-  phone: from,
-  title: parsed.data.title,
-  emoji: findBestEmoji(parsed.data.title),
-  date: eventDate.toJSDate(),
-  notifyAt: notifyAt.toJSDate(),
-  sent: false
-});
-
 // Iniciar comprobación periódica (cada 1 minuto)
 function startScheduler() {
   console.log('🔄 Iniciando programador de recordatorios');
