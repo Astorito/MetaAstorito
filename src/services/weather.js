@@ -8,10 +8,16 @@ function formatWeatherMessageFromWttr(data, city) {
     // Extraer datos principales
     const current = data.current_condition[0];
     const temp = current.temp_C;
-    const feels_like = current.FeelsLikeC;
     const description = current.weatherDesc[0].value;
-    const humidity = current.humidity;
     const windSpeed = Math.round(current.windspeedKmph);
+    
+    // Extraer temperaturas máxima y mínima del día actual
+    let maxTemp = "N/A";
+    let minTemp = "N/A";
+    if (data.weather && data.weather[0]) {
+      maxTemp = data.weather[0].maxtempC;
+      minTemp = data.weather[0].mintempC;
+    }
     
     // Obtener probabilidad de lluvia (del pronóstico del día actual)
     let rainProb = "No disponible";
@@ -43,12 +49,12 @@ function formatWeatherMessageFromWttr(data, city) {
       emoji = "☀️";
     }
     
-    // Construir mensaje
-    return `${emoji} *Clima en ${city}*\n\n` +
-           `🌡️ ${temp}°C\n` +
-           `☁️ ${description}\n` +
-           `🌧️ ${rainProb}\n` +
-           `💨 ${windSpeed} km/h`;
+    // Construir mensaje con el nuevo formato
+    return `${emoji} Clima en ${city}: ☁️ ${description}\n\n` +
+           `🌡️ Max: ${maxTemp}°C\n` +
+           `🌡️ Min: ${minTemp}°C\n` +
+           `☔ Lluvia: ${rainProb}\n` +
+           `💨 Viento: ${windSpeed} km/h`;
   } catch (error) {
     console.error('Error formateando respuesta de wttr.in:', error);
     return `🌤️ *Clima en ${city}*\n\nInformación disponible pero con formato limitado.`;
