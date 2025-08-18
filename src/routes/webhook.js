@@ -287,3 +287,13 @@ router.post("/", async (req, res) => {
 });
 
 module.exports = router;
+// Agregar al inicio del archivo, después de los requires:
+const { getContext, clearContext } = require('../services/context');
+
+// Luego, modificar el procesamiento de categoría CLIMA en el switch:
+case 'CLIMA':
+  console.log("🌦️ Consulta de clima detectada");
+  
+  // Manejar la consulta de clima (la función handleWeatherQuery ya tiene la lógica de contexto)
+  await handleWeatherQuery(messageText, from);
+  return res.sendStatus(200);
