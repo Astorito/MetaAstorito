@@ -101,8 +101,6 @@ async function handleAudioMessage(audioId, from, token) {
 
 module.exports = { handleAudioMessage };
 
-// En src/routes/webhook.js, agrega esta importación
-const { handleAudioMessage } = require('../services/transcription');
 
 // Dentro de tu router.post("/", async (req, res) => {...})
 // Después de extraer los datos de la estructura de WhatsApp
