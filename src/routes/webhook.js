@@ -6,6 +6,7 @@ const { parseReminderWithOpenAI, getGPTResponse } = require('../services/openai'
 const Reminder = require('../models/reminder');
 const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
+const { handleAudioMessage } = require('../services/transcription');
 
 function isWeatherQuery(text) {
   // Amplié la lista de palabras para detectar consultas de clima
@@ -25,23 +26,57 @@ router.post("/", async (req, res) => {
   // Log completo para debug
   console.log("🔔 Webhook recibido (raw body):", JSON.stringify(req.body, null, 2));
 
-  // Extraer datos de la estructura real de WhatsApp
-  let from, messageText;
+  // Extraer datos de la estructura de WhatsApp
+  let from, messageText, messageType, audioId;
   try {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
-    const message = change?.value?.messages?.[0];
-    from = message?.from;
-    messageText = message?.text?.body;
+    const value = change?.value;
+    const message = value?.messages?.[0];
+    
+    if (message) {
+      from = message.from;
+      messageType = message.type;
+      
+      // Extraer texto o audio según el tipo
+      if (messageType === 'text') {
+        messageText = message.text?.body;
+      } else if (messageType === 'audio' && message.audio) {
+        audioId = message.audio.id;
+        console.log("🎤 Audio ID detectado:", audioId);
+      }
+    }
   } catch (e) {
-    from = undefined;
-    messageText = undefined;
+    console.error('Error extrayendo datos del mensaje:', e);
   }
 
-  console.log("🔔 Webhook recibido:", { from, messageText });
+  console.log("🔔 Webhook procesando:", { from, messageType, audioId });
 
-  if (!messageText || !from) {
-    console.log("❌ Mensaje inválido");
+  if (!from) {
+    console.log("❌ Mensaje sin remitente");
+    return res.sendStatus(200);
+  }
+
+  // MANEJAR AUDIO: si es un mensaje de audio, procesarlo
+  if (messageType === 'audio' && audioId) {
+    console.log("🎤 Procesando mensaje de audio, ID:", audioId);
+    const token = process.env.WHATSAPP_TOKEN;
+    
+    // Procesar el audio y obtener la transcripción
+    messageText = await handleAudioMessage(audioId, from, token);
+    
+    // Si no obtuvimos transcripción, terminamos
+    if (!messageText) {
+      return res.sendStatus(200);
+    }
+    
+    console.log("🎤 Audio procesado como comando:", messageText);
+    // Continúa con el flujo normal usando la transcripción como mensaje
+  }
+
+  // Verificar que tenemos texto para procesar (ya sea de texto o transcrito)
+  if (!messageText) {
+    console.log("❌ No hay texto para procesar");
     return res.sendStatus(200);
   }
 
