@@ -272,6 +272,75 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
+  // Detección para ver una lista específica
+  if (/ver (mi|la) lista|mostrar (mi|la) lista|listar/i.test(messageText)) {
+    console.log("📋 Solicitud para ver una lista detectada");
+    
+    // Extraer el nombre de la lista
+    const viewMatch = messageText.match(/lista (?:de|del|para) ([a-záéíóúñ\s]+)/i);
+    if (!viewMatch) {
+      // Si no se especifica qué lista, mostrar todas las listas del usuario
+      try {
+        const userLists = await List.find({ phone: from }).sort({ createdAt: -1 }).limit(10);
+        
+        if (userLists.length === 0) {
+          await sendWhatsAppMessage(from, "No tienes ninguna lista guardada. Puedes crear una diciendo: \"Crear lista de compras: pan, leche, huevos\"");
+          return res.sendStatus(200);
+        }
+        
+        const listsMessage = 
+          `📋 *Tus listas:*\n\n` +
+          userLists.map(list => `• ${list.name} (${list.items.length} items)`).join('\n') +
+          `\n\nPara ver una lista específica dime: "Ver mi lista de [nombre]"`;
+        
+        await sendWhatsAppMessage(from, listsMessage);
+        return res.sendStatus(200);
+      } catch (err) {
+        console.error('Error obteniendo listas:', err);
+        await sendWhatsAppMessage(from, "Ocurrió un error al consultar tus listas.");
+        return res.sendStatus(200);
+      }
+    }
+    
+    // Si se especificó una lista, buscarla
+    const listName = viewMatch[1].trim();
+    
+    try {
+      // Buscar una lista que contenga ese nombre (busqueda flexible)
+      const list = await List.findOne({ 
+        phone: from,
+        name: { $regex: new RegExp(listName, 'i') }
+      });
+      
+      if (!list) {
+        await sendWhatsAppMessage(from, `No encontré ninguna lista llamada "${listName}". ¿Querés crear una nueva?`);
+        return res.sendStatus(200);
+      }
+      
+      // Mostrar los elementos de la lista
+      const checkedItems = list.items.filter(item => item.checked);
+      const uncheckedItems = list.items.filter(item => !item.checked);
+      
+      const listMessage = 
+        `📋 *Lista de ${list.name}*\n\n` +
+        (uncheckedItems.length > 0 ? 
+          `*Pendientes:*\n${uncheckedItems.map((item, i) => `${i+1}. ${item.text}`).join('\n')}\n\n` : 
+          "") +
+        (checkedItems.length > 0 ? 
+          `*Completados:*\n${checkedItems.map((item, i) => `✅ ${item.text}`).join('\n')}\n\n` : 
+          "") +
+        `\nCreada el ${new Date(list.createdAt).toLocaleDateString('es-AR')}` +
+        `\n\nPodés agregar más elementos diciendo: "Agregar [item] a mi lista de ${list.name}"`;
+      
+      await sendWhatsAppMessage(from, listMessage);
+    } catch (err) {
+      console.error('Error obteniendo lista:', err);
+      await sendWhatsAppMessage(from, "Ocurrió un error al consultar tu lista.");
+    }
+    
+    return res.sendStatus(200);
+  }
+
   // CLASIFICACIÓN DE MENSAJES con OpenAI
   try {
     console.log("🔍 Clasificando mensaje con OpenAI...");
