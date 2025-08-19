@@ -309,6 +309,21 @@ async function handleOnboarding(from, messageText, user, res) {
   }
 }
 
+// Función para manejar recordatorios recurrentes (ejemplo)
+async function handleRecurringReminder(from, data) {
+  const reminderSchedule = new RecurringReminder({
+    phone: from,
+    title: data.title,
+    pattern: data.recurrence,
+    time: data.time,
+    nextDate: nextOccurrence.toJSDate()
+  });
+  await reminderSchedule.save();
+  // resto del código...
+}
+
+// Esta función se llamaría desde un controlador apropiado
+
 module.exports = router;
 
 // Extender parseReminderWithOpenAI para detectar patrones de recurrencia
