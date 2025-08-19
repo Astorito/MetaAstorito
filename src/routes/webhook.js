@@ -364,3 +364,14 @@ if (/crear lista de|nueva lista|agregar lista/i.test(messageText)) {
     await sendWhatsAppMessage(from, listMessage);
   }
 }
+
+// Si deseas mantener la funcionalidad, agrega esta función
+async function handleBirthdayReminder(from, messageText) {
+  // Extraer nombre y fecha
+  const birthdayData = extractBirthdayData(messageText);
+  
+  // Guardar en base de datos
+  await saveBirthday(from, birthdayData.name, birthdayData.date);
+  
+  await sendWhatsAppMessage(from, `🎂 Recordaré el cumpleaños de ${birthdayData.name} el ${birthdayData.formattedDate}`);
+}
