@@ -8,7 +8,7 @@ const Reminder = require('../models/reminder');
 const User = require('../models/user');
 const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
-const { getContext, clearContext } = require('../services/context');
+const { getContext, saveContext, clearContext } = require('../services/context');
 
 // Set para recordar usuarios esperando ciudad para clima
 const waitingForCity = new Set();
@@ -63,7 +63,7 @@ router.post("/", async (req, res) => {
     user = new User({ 
       phone: from,
       name: 'Usuario',
-      onboardingCompleted: false  // Nuevo usuario, onboarding no completado
+      onboardingCompleted: false
     });
     await user.save();
     console.log("👤 Nuevo usuario creado:", from);
@@ -92,8 +92,7 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // *** NUEVA LÓGICA DE ONBOARDING OBLIGATORIO ***
-  // Verificar si el usuario ya completó el onboarding
+  // Verificar si el usuario es nuevo y necesita pasar por onboarding
   if (!user.onboardingCompleted) {
     console.log("🚦 Usuario nuevo, iniciando onboarding");
     return await handleOnboarding(from, messageText, user, res);
@@ -123,48 +122,47 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // NUEVA IMPLEMENTACIÓN: Clasificar el mensaje con OpenAI
+  // Detectar si es una pregunta sobre Astorito
+  const aboutAstorito = /que( es|.s)? astorito|para que sirve|que puede hacer|como funciona|ayuda|help|instrucciones|comandos|funcionalidades|capacidades/i.test(messageText);
+
+  if (aboutAstorito) {
+    console.log("❓ Pregunta sobre Astorito detectada");
+    
+    const capabilitiesMessage = 
+      `🤖 *¿Qué es Astorito?*\n\n` +
+      `Soy tu asistente personal por WhatsApp. Puedo ayudarte con:\n\n` +
+      `🗓️ *Recordatorios*\n` +
+      `• "Recuérdame llamar al médico mañana a las 10am"\n` +
+      `• "Agenda reunión con Juan el viernes a las 15hs"\n\n` +
+      
+      `🌤️ *Consultas de clima*\n` +
+      `• "¿Cómo está el clima en Buenos Aires?"\n` +
+      `• "Clima para los próximos 3 días en Rosario"\n\n` +
+      
+      `🎙️ *Mensajes de voz*\n` +
+      `• Puedes enviarme notas de voz y las entenderé\n\n` +
+      
+      `📋 *Listas*\n` +
+      `• "Crear lista de compras: leche, pan, huevos"\n\n` +
+      
+      `🔄 *Recordatorios recurrentes*\n` +
+      `• "Recordarme tomar agua todos los días a las 10am"\n\n` +
+      
+      `🎂 *Recordatorios de cumpleaños*\n` +
+      `• "Recuérdame el cumpleaños de María el 20 de junio"\n\n` +
+      
+      `✨ *Astorito Premium*\n` +
+      `• Resúmenes de noticias\n` +
+      `• Conexión con Google Calendar\n\n` +
+      
+      `¿En qué puedo ayudarte hoy?`;
+    
+    await sendWhatsAppMessage(from, capabilitiesMessage);
+    return res.sendStatus(200);
+  }
+
+  // CLASIFICACIÓN DE MENSAJES con OpenAI
   try {
-    // Detectar si es una pregunta sobre Astorito
-    const aboutAstorito = /que( es|.s)? astorito|para que sirve|que puede hacer|como funciona|ayuda|help|instrucciones|comandos|funcionalidades|capacidades/i.test(messageText);
-
-    if (aboutAstorito) {
-      console.log("❓ Pregunta sobre Astorito detectada");
-      
-      const capabilitiesMessage = 
-        `🤖 *¿Qué es Astorito?*\n\n` +
-        `Soy tu asistente personal por WhatsApp. Puedo ayudarte con:\n\n` +
-        `🗓️ *Recordatorios*\n` +
-        `• "Recuérdame llamar al médico mañana a las 10am"\n` +
-        `• "Agenda reunión con Juan el viernes a las 15hs"\n\n` +
-        
-        `🌤️ *Consultas de clima*\n` +
-        `• "¿Cómo está el clima en Buenos Aires?"\n` +
-        `• "Clima para los próximos 3 días en Rosario"\n\n` +
-        
-        `🎙️ *Mensajes de voz*\n` +
-        `• Puedes enviarme notas de voz y las entenderé\n\n` +
-        
-        `📋 *Listas*\n` +
-        `• "Crear lista de compras: leche, pan, huevos"\n\n` +
-        
-        `🔄 *Recordatorios recurrentes*\n` +
-        `• "Recordarme tomar agua todos los días a las 10am"\n\n` +
-        
-        `🎂 *Recordatorios de cumpleaños*\n` +
-        `• "Recuérdame el cumpleaños de María el 20 de junio"\n\n` +
-        
-        `✨ *Astorito Premium*\n` +
-        `• Resúmenes de noticias\n` +
-        `• Conexión con Google Calendar\n\n` +
-        
-        `¿En qué puedo ayudarte hoy?`;
-      
-      await sendWhatsAppMessage(from, capabilitiesMessage);
-      return res.sendStatus(200);
-    }
-
-    // Si no es una pregunta sobre Astorito, continuar con la clasificación normal
     console.log("🔍 Clasificando mensaje con OpenAI...");
     const messageCategory = await classifyMessage(messageText);
     console.log(`📊 Categoría del mensaje: ${messageCategory}`);
@@ -290,7 +288,7 @@ async function handleOnboarding(from, messageText, user, res) {
       "🎙️ *Mensajes de voz*: También puedes enviarme notas de voz y las entenderé\n\n" +
       "📋 *Listas*: \"Crear lista de compras: leche, pan, huevos\"\n\n" +
       "🔄 *Recordatorios recurrentes*: \"Recuérdame hacer ejercicio todos los lunes a las 7am\"\n\n" +
-      "🎂 *Recordatorios de cumpleaños*: \"Recuérdame el cumpleaños de Juan el 15 de mayo\"\n\n" +
+      "�� *Recordatorios de cumpleaños*: \"Recuérdame el cumpleaños de Juan el 15 de mayo\"\n\n" +
       "Además con Astorito Premium podrás:\n" +
       "📰 Recibir resúmenes de noticias\n" +  
       "🔄 Conectarlo con tu Google Calendar\n\n" +
@@ -309,69 +307,4 @@ async function handleOnboarding(from, messageText, user, res) {
   }
 }
 
-// Función para manejar recordatorios recurrentes (ejemplo)
-async function handleRecurringReminder(from, parsed) {
-  const reminderSchedule = new RecurringReminder({
-    phone: from,
-    title: parsed.data.title,
-    pattern: parsed.data.recurrence,
-    time: parsed.data.time,
-    nextDate: calculateNextOccurrence(parsed.data).toJSDate()
-  });
-  await reminderSchedule.save();
-  await sendWhatsAppMessage(from, `⏰ Recordatorio recurrente creado: "${parsed.data.title}" ${parsed.data.recurrence}`);
-  return reminderSchedule;
-}
-
-// Esta función se llamaría desde un controlador apropiado
-
 module.exports = router;
-
-// Extender parseReminderWithOpenAI para detectar patrones de recurrencia
-if (parsed.data.recurrence) {
-  // "todos los lunes", "cada 2 días", etc.
-  const reminderSchedule = new RecurringReminder({
-    phone: from,
-    title: parsed.data.title,
-    pattern: parsed.data.recurrence, // diario, semanal, mensual
-    time: parsed.data.time,
-    nextDate: nextOccurrence.toJSDate()
-  });
-}
-
-// Nueva lógica para recordar cumpleaños
-if (/recordar cumpleaños|recordatorio de cumpleaños|cumpleaños de/i.test(messageText)) {
-  // Extraer nombre y fecha
-  const birthdayData = extractBirthdayData(messageText);
-  
-  // Guardar en base de datos
-  await saveBirthday(from, birthdayData.name, birthdayData.date);
-  
-  await sendWhatsAppMessage(from, `🎂 Recordaré el cumpleaños de ${birthdayData.name} el ${birthdayData.formattedDate}`);
-}
-
-// Implementación básica para manejar listas
-if (/crear lista de|nueva lista|agregar lista/i.test(messageText)) {
-  // Extraer el tipo de lista y los elementos
-  const listMatch = messageText.match(/lista de ([a-zA-Z]+)([\s\S]*)/i);
-  if (listMatch) {
-    const listType = listMatch[1]; // compras, tareas, etc.
-    const items = listMatch[2].split(',').map(item => item.trim()).filter(Boolean);
-    
-    // Guardar la lista en la base de datos
-    // Mostrar confirmación al usuario
-    const listMessage = `📋 Lista de ${listType} creada:\n\n${items.map(item => `• ${item}`).join('\n')}`;
-    await sendWhatsAppMessage(from, listMessage);
-  }
-}
-
-// Si deseas mantener la funcionalidad, agrega esta función
-async function handleBirthdayReminder(from, messageText) {
-  // Extraer nombre y fecha
-  const birthdayData = extractBirthdayData(messageText);
-  
-  // Guardar en base de datos
-  await saveBirthday(from, birthdayData.name, birthdayData.date);
-  
-  await sendWhatsAppMessage(from, `🎂 Recordaré el cumpleaños de ${birthdayData.name} el ${birthdayData.formattedDate}`);
-}
