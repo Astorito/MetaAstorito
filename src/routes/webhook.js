@@ -58,8 +58,13 @@ router.post("/", async (req, res) => {
 
   // Buscar usuario o crear uno nuevo si no existe
   let user = await User.findOne({ phone: from });
-  if (!user) {
-    user = new User({ phone: from });
+  const isNewUser = !user;
+  if (isNewUser) {
+    user = new User({ 
+      phone: from,
+      name: 'Usuario',
+      onboardingCompleted: false  // Nuevo usuario, onboarding no completado
+    });
     await user.save();
     console.log("👤 Nuevo usuario creado:", from);
   }
@@ -87,42 +92,17 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // Manejo del proceso de onboarding
+  // *** NUEVA LÓGICA DE ONBOARDING OBLIGATORIO ***
+  // Verificar si el usuario ya completó el onboarding
+  if (!user.onboardingCompleted) {
+    console.log("🚦 Usuario nuevo, iniciando onboarding");
+    return await handleOnboarding(from, messageText, user, res);
+  }
+
+  // Si el usuario está en medio del proceso de onboarding
   if (onboardingState[from]) {
-    // Estamos en proceso de onboarding
-    if (onboardingState[from].step === 1) {
-      // El usuario acaba de responder con su nombre
-      const userName = messageText.trim();
-      
-      // Guardar nombre en la base de datos
-      user.name = userName;
-      await user.save();
-      console.log(`👤 Nombre de usuario actualizado: ${userName} para ${from}`);
-      
-      onboardingState[from].name = userName;
-      onboardingState[from].step = 2;
-      
-      // Segundo mensaje de onboarding con las capacidades
-      const welcomeMessage = 
-        `Genial ${userName}!\n\n` +
-        "Puedo ayudarte con:\n\n" +
-        "🗓️ *Recordatorios*: Dime algo como \"Recuérdame reunión con Juan mañana a las 3 pm\"\n\n" +
-        "🌤️ *Clima*: Pregúntame \"¿Cómo está el clima en Buenos Aires?\"\n\n" +
-        "🎙️ *Mensajes de voz*: También puedes enviarme notas de voz y las entenderé\n\n" +
-        "Además con Astorito Premium podrás:\n" +
-        "📋 Generar Listas - Supermercado, viajes, etc\n" +
-        "❓ Consultas Generales\n" +
-        "📅 Armar tu cronograma de la semana\n" +
-        "🔄 Conectarlo con tu Google Calendar\n\n" +
-        "¿En qué puedo ayudarte hoy?";
-      
-      await sendWhatsAppMessage(from, welcomeMessage);
-      return res.sendStatus(200);
-    } else {
-      // Ya completó el onboarding, eliminar el estado
-      delete onboardingState[from];
-      // Continuar con el flujo normal
-    }
+    console.log("🚦 Continuando onboarding en proceso");
+    return await handleOnboarding(from, messageText, user, res);
   }
 
   // Si el usuario estaba esperando ciudad para clima, procesar directamente
@@ -133,25 +113,58 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // Verificar si es un saludo para iniciar onboarding
+  // Verificar si es un saludo para reiniciar onboarding si es necesario
   if (/^(hola|buenas|buen día|buenas tardes|buenas noches)$/i.test(messageText.trim())) {
-    console.log("👋 Saludo detectado - Iniciando onboarding");
+    console.log("👋 Saludo detectado");
     
-    // Si ya tenemos su nombre, no preguntar de nuevo
-    if (user && user.name && user.name !== 'Usuario') {
-      const welcomeBack = `¡Hola de nuevo ${user.name}! ¿En qué puedo ayudarte hoy?`;
-      await sendWhatsAppMessage(from, welcomeBack);
-      return res.sendStatus(200);
-    }
-    
-    // Iniciar onboarding paso 1
-    onboardingState[from] = { step: 1 };
-    await sendWhatsAppMessage(from, "¡Hola! Soy Astorito, gracias por escribirme. ¿Cómo es tu nombre?");
+    // Saludar al usuario por su nombre
+    const welcomeBack = `¡Hola de nuevo ${user.name}! ¿En qué puedo ayudarte hoy?`;
+    await sendWhatsAppMessage(from, welcomeBack);
     return res.sendStatus(200);
   }
 
   // NUEVA IMPLEMENTACIÓN: Clasificar el mensaje con OpenAI
   try {
+    // Detectar si es una pregunta sobre Astorito
+    const aboutAstorito = /que( es|.s)? astorito|para que sirve|que puede hacer|como funciona|ayuda|help|instrucciones|comandos|funcionalidades|capacidades/i.test(messageText);
+
+    if (aboutAstorito) {
+      console.log("❓ Pregunta sobre Astorito detectada");
+      
+      const capabilitiesMessage = 
+        `🤖 *¿Qué es Astorito?*\n\n` +
+        `Soy tu asistente personal por WhatsApp. Puedo ayudarte con:\n\n` +
+        `🗓️ *Recordatorios*\n` +
+        `• "Recuérdame llamar al médico mañana a las 10am"\n` +
+        `• "Agenda reunión con Juan el viernes a las 15hs"\n\n` +
+        
+        `🌤️ *Consultas de clima*\n` +
+        `• "¿Cómo está el clima en Buenos Aires?"\n` +
+        `• "Clima para los próximos 3 días en Rosario"\n\n` +
+        
+        `🎙️ *Mensajes de voz*\n` +
+        `• Puedes enviarme notas de voz y las entenderé\n\n` +
+        
+        `📋 *Listas*\n` +
+        `• "Crear lista de compras: leche, pan, huevos"\n\n` +
+        
+        `🔄 *Recordatorios recurrentes*\n` +
+        `• "Recordarme tomar agua todos los días a las 10am"\n\n` +
+        
+        `🎂 *Recordatorios de cumpleaños*\n` +
+        `• "Recuérdame el cumpleaños de María el 20 de junio"\n\n` +
+        
+        `✨ *Astorito Premium*\n` +
+        `• Resúmenes de noticias\n` +
+        `• Conexión con Google Calendar\n\n` +
+        
+        `¿En qué puedo ayudarte hoy?`;
+      
+      await sendWhatsAppMessage(from, capabilitiesMessage);
+      return res.sendStatus(200);
+    }
+
+    // Si no es una pregunta sobre Astorito, continuar con la clasificación normal
     console.log("🔍 Clasificando mensaje con OpenAI...");
     const messageCategory = await classifyMessage(messageText);
     console.log(`📊 Categoría del mensaje: ${messageCategory}`);
@@ -177,7 +190,9 @@ router.post("/", async (req, res) => {
           }
 
           // Crear y guardar el recordatorio (usa Luxon para fechas)
-          const eventDate = DateTime.fromISO(`${parsed.data.date}T${parsed.data.time}`);
+          const eventDate = DateTime.fromISO(`${parsed.data.date}T${parsed.data.time}`)
+                          .setZone('America/Argentina/Buenos_Aires');
+                          
           if (!eventDate.isValid) {
             await sendWhatsAppMessage(from, "La fecha y hora del recordatorio no son válidas. Por favor, revisá el mensaje.");
             return res.sendStatus(200);
@@ -226,7 +241,7 @@ router.post("/", async (req, res) => {
           const gpt = await getGPTResponse(messageText);
           let respuesta = gpt.content;
           
-          // Añadir mensaje informativo (MODIFICADO)
+          // Añadir mensaje informativo
           respuesta += "\n\n✨Para otras preguntas generales, te recomiendo usar https://chatgpt.com/";
           
           await sendWhatsAppMessage(from, respuesta);
@@ -243,4 +258,95 @@ router.post("/", async (req, res) => {
   }
 });
 
+// Función auxiliar para manejar el flujo de onboarding
+async function handleOnboarding(from, messageText, user, res) {
+  // Iniciar onboarding si no está en proceso
+  if (!onboardingState[from]) {
+    onboardingState[from] = { step: 1 };
+    await sendWhatsAppMessage(from, "¡Hola! Soy Astorito, gracias por escribirme. ¿Cómo es tu nombre?");
+    return res.sendStatus(200);
+  }
+  
+  // Procesar según el paso actual
+  if (onboardingState[from].step === 1) {
+    // El usuario acaba de responder con su nombre
+    const userName = messageText.trim();
+    
+    // Guardar nombre en la base de datos
+    user.name = userName;
+    user.onboardingCompleted = true;  // Marcamos onboarding como completado
+    await user.save();
+    console.log(`👤 Nombre de usuario actualizado: ${userName} para ${from}`);
+    
+    onboardingState[from].name = userName;
+    onboardingState[from].step = 2;
+    
+    // Segundo mensaje de onboarding con las capacidades
+    const welcomeMessage = 
+      `Genial ${userName}!\n\n` +
+      "Puedo ayudarte con:\n\n" +
+      "🗓️ *Recordatorios*: Dime algo como \"Recuérdame reunión con Juan mañana a las 3 pm\"\n\n" +
+      "🌤️ *Clima*: Pregúntame \"¿Cómo está el clima en Buenos Aires?\" o \"Clima para los próximos 3 días\"\n\n" +
+      "🎙️ *Mensajes de voz*: También puedes enviarme notas de voz y las entenderé\n\n" +
+      "📋 *Listas*: \"Crear lista de compras: leche, pan, huevos\"\n\n" +
+      "🔄 *Recordatorios recurrentes*: \"Recuérdame hacer ejercicio todos los lunes a las 7am\"\n\n" +
+      "🎂 *Recordatorios de cumpleaños*: \"Recuérdame el cumpleaños de Juan el 15 de mayo\"\n\n" +
+      "Además con Astorito Premium podrás:\n" +
+      "📰 Recibir resúmenes de noticias\n" +  
+      "🔄 Conectarlo con tu Google Calendar\n\n" +
+      "¿En qué puedo ayudarte hoy?";
+    
+    await sendWhatsAppMessage(from, welcomeMessage);
+    
+    // Eliminar estado de onboarding
+    delete onboardingState[from];
+    
+    return res.sendStatus(200);
+  } else {
+    // Paso inesperado, reiniciar el onboarding
+    delete onboardingState[from];
+    return res.sendStatus(200);
+  }
+}
+
 module.exports = router;
+
+// Extender parseReminderWithOpenAI para detectar patrones de recurrencia
+if (parsed.data.recurrence) {
+  // "todos los lunes", "cada 2 días", etc.
+  const reminderSchedule = new RecurringReminder({
+    phone: from,
+    title: parsed.data.title,
+    pattern: parsed.data.recurrence, // diario, semanal, mensual
+    time: parsed.data.time,
+    nextDate: nextOccurrence.toJSDate()
+  });
+  await reminderSchedule.save();
+  await sendWhatsAppMessage(from, `⏰ Recordatorio recurrente creado: "${parsed.data.title}" ${parsed.data.recurrence}`);
+}
+
+// Nueva lógica para recordar cumpleaños
+if (/recordar cumpleaños|recordatorio de cumpleaños|cumpleaños de/i.test(messageText)) {
+  // Extraer nombre y fecha
+  const birthdayData = extractBirthdayData(messageText);
+  
+  // Guardar en base de datos
+  await saveBirthday(from, birthdayData.name, birthdayData.date);
+  
+  await sendWhatsAppMessage(from, `🎂 Recordaré el cumpleaños de ${birthdayData.name} el ${birthdayData.formattedDate}`);
+}
+
+// Implementación básica para manejar listas
+if (/crear lista de|nueva lista|agregar lista/i.test(messageText)) {
+  // Extraer el tipo de lista y los elementos
+  const listMatch = messageText.match(/lista de ([a-zA-Z]+)([\s\S]*)/i);
+  if (listMatch) {
+    const listType = listMatch[1]; // compras, tareas, etc.
+    const items = listMatch[2].split(',').map(item => item.trim()).filter(Boolean);
+    
+    // Guardar la lista en la base de datos
+    // Mostrar confirmación al usuario
+    const listMessage = `📋 Lista de ${listType} creada:\n\n${items.map(item => `• ${item}`).join('\n')}`;
+    await sendWhatsAppMessage(from, listMessage);
+  }
+}

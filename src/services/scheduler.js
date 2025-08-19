@@ -5,18 +5,28 @@ const { DateTime } = require('luxon');
 
 // Función para verificar recordatorios pendientes
 async function checkReminders() {
-  // Usar DateTime para obtener la hora actual con zona horaria
-  const now = DateTime.now().setZone('America/Argentina/Buenos_Aires').toJSDate();
-  console.log(`🔍 Verificando recordatorios pendientes: ${now.toISOString()}`);
-  
   try {
+    // Usar DateTime para obtener la hora actual con zona horaria
+    const now = DateTime.now().setZone('America/Argentina/Buenos_Aires');
+    console.log(`🔍 Verificando recordatorios pendientes: ${now.toFormat('yyyy-MM-dd HH:mm:ss')}`);
+    
     // Buscar recordatorios que deben enviarse ahora y no han sido enviados
+    // Usamos una ventana de 2 minutos para evitar perder recordatorios por segundos
+    const twoMinutesAgo = now.minus({ minutes: 2 }).toJSDate();
     const pendingReminders = await Reminder.find({
-      notifyAt: { $lte: now },
+      notifyAt: { $lte: now.toJSDate(), $gte: twoMinutesAgo },
       sent: false
     });
     
-    console.log(`📝 Encontrados ${pendingReminders.length} recordatorios pendientes`);
+    console.log(`📝 Encontrados ${pendingReminders.length} recordatorios pendientes en el rango de tiempo`);
+    
+    // Para debug: mostrar todos los recordatorios no enviados
+    const allPendingReminders = await Reminder.find({ sent: false });
+    console.log(`📋 Total de recordatorios pendientes: ${allPendingReminders.length}`);
+    for (const rem of allPendingReminders) {
+      const remDate = DateTime.fromJSDate(rem.notifyAt).setZone('America/Argentina/Buenos_Aires');
+      console.log(`  - "${rem.title}" programado para ${remDate.toFormat('yyyy-MM-dd HH:mm:ss')} (${remDate > now ? 'futuro' : 'pasado'})`);
+    }
     
     // Procesar cada recordatorio pendiente
     for (const reminder of pendingReminders) {
@@ -39,7 +49,7 @@ async function checkReminders() {
           `No te olvides!`;
         
         // Enviar el recordatorio
-        console.log(`📤 Enviando recordatorio a ${reminder.phone}: "${reminder.title}" (programado para ${eventDate.toISO()})`);
+        console.log(`📤 Enviando recordatorio a ${reminder.phone}: "${reminder.title}" (programado para ${eventDate.toFormat('yyyy-MM-dd HH:mm:ss')})`);
         await sendWhatsAppMessage(reminder.phone, message);
         
         // Marcar como enviado
@@ -62,6 +72,7 @@ function startScheduler() {
   console.log(`🕒 Zona horaria del sistema: ${DateTime.now().zoneName}`);
   console.log(`🕒 Hora actual: ${DateTime.now().setZone('America/Argentina/Buenos_Aires').toFormat('yyyy-MM-dd HH:mm:ss')}`);
   
+  // Ejecutar la verificación cada minuto
   setInterval(checkReminders, 60000); // 60000 ms = 1 minuto
   
   // También ejecutar inmediatamente al iniciar
