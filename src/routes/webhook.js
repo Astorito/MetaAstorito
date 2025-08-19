@@ -10,6 +10,7 @@ const List = require('../models/list');
 const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
 const { getContext, saveContext, clearContext } = require('../services/context');
+const { logIncomingInteraction } = require('../services/analytics');
 
 // Set para recordar usuarios esperando ciudad para clima
 const waitingForCity = new Set();
@@ -57,6 +58,11 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
+  // Registrar la interacción entrante
+  if (messageText) {
+    await logIncomingInteraction(from, messageType || "text", messageText);
+  }
+  
   // Buscar usuario o crear uno nuevo si no existe
   let user = await User.findOne({ phone: from });
   const isNewUser = !user;
@@ -404,7 +410,7 @@ router.post("/", async (req, res) => {
             `⏰ Te avisaré: ${notifyAt.toFormat("EEEE d 'de' MMMM", { locale: 'es' })} a las ${notifyAt.toFormat('HH:mm')}\n\n` +
             `Avisanos si querés agendar otro evento!`;
 
-          await sendWhatsAppMessage(from, confirmMessage);
+          await sendWhatsAppMessage(from, confirmMessage, "RECORDATORIO");
         } else {
           // Si no se pudo extraer los datos del recordatorio
           await sendWhatsAppMessage(from, "No pude entender los detalles del recordatorio. Por favor, especifica fecha, hora y descripción del evento.");
@@ -422,7 +428,7 @@ router.post("/", async (req, res) => {
           // Añadir mensaje informativo
           respuesta += "\n\n✨Para otras preguntas generales, te recomiendo usar https://chatgpt.com/";
           
-          await sendWhatsAppMessage(from, respuesta);
+          await sendWhatsAppMessage(from, respuesta, "GENERALQUERY");
         } catch (err) {
           console.error("❌ Error obteniendo respuesta de GPT:", err);
           await sendWhatsAppMessage(from, "Lo siento, no pude procesar tu consulta en este momento.");

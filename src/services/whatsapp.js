@@ -1,7 +1,8 @@
 const axios = require('axios');
 const { whatsappToken, phoneNumberId } = require('../config/environment');
+const { logOutgoingInteraction } = require('./analytics');
 
-async function sendWhatsAppMessage(to, message, buttons = null) {
+async function sendWhatsAppMessage(to, message, category = "", buttons = null) {
   try {
     console.log('📤 Enviando mensaje a:', to);
     
@@ -43,6 +44,10 @@ async function sendWhatsAppMessage(to, message, buttons = null) {
     );
 
     console.log('✅ Mensaje enviado:', response.data);
+
+    // Registrar la interacción saliente
+    await logOutgoingInteraction(to, message, category);
+    
     return response.data;
   } catch (err) {
     console.error("❌ Error enviando mensaje:", err);
