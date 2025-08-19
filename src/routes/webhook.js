@@ -310,16 +310,17 @@ async function handleOnboarding(from, messageText, user, res) {
 }
 
 // Función para manejar recordatorios recurrentes (ejemplo)
-async function handleRecurringReminder(from, data) {
+async function handleRecurringReminder(from, parsed) {
   const reminderSchedule = new RecurringReminder({
     phone: from,
-    title: data.title,
-    pattern: data.recurrence,
-    time: data.time,
-    nextDate: nextOccurrence.toJSDate()
+    title: parsed.data.title,
+    pattern: parsed.data.recurrence,
+    time: parsed.data.time,
+    nextDate: calculateNextOccurrence(parsed.data).toJSDate()
   });
   await reminderSchedule.save();
-  // resto del código...
+  await sendWhatsAppMessage(from, `⏰ Recordatorio recurrente creado: "${parsed.data.title}" ${parsed.data.recurrence}`);
+  return reminderSchedule;
 }
 
 // Esta función se llamaría desde un controlador apropiado
@@ -336,7 +337,6 @@ if (parsed.data.recurrence) {
     time: parsed.data.time,
     nextDate: nextOccurrence.toJSDate()
   });
-  await sendWhatsAppMessage(from, `⏰ Recordatorio recurrente creado: "${parsed.data.title}" ${parsed.data.recurrence}`);
 }
 
 // Nueva lógica para recordar cumpleaños
