@@ -6,6 +6,7 @@ const { parseReminderWithOpenAI, getGPTResponse, classifyMessage } = require('..
 const { handleAudioMessage } = require('../services/transcription');
 const Reminder = require('../models/reminder');
 const User = require('../models/user');
+const List = require('../models/list');
 const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
 const { getContext, saveContext, clearContext } = require('../services/context');
@@ -67,7 +68,18 @@ router.post("/", async (req, res) => {
     });
     await user.save();
     console.log("👤 Nuevo usuario creado:", from);
+  } else {
+    console.log(`👤 Usuario existente: ${from}, onboardingCompleted: ${user.onboardingCompleted}`);
+    // Asegurarse de que usuarios existentes tengan onboardingCompleted=true
+    if (!user.hasOwnProperty('onboardingCompleted')) {
+      console.log(`⚠️ Usuario sin propiedad onboardingCompleted, actualizando...`);
+      user.onboardingCompleted = true;
+      await user.save();
+    }
   }
+
+  // Después de buscar al usuario
+  console.log(`👤 Usuario encontrado: ${from}, onboardingCompleted: ${user.onboardingCompleted}`);
 
   // MANEJAR AUDIO: si es un mensaje de audio, procesarlo
   if (messageType === 'audio' && audioId) {
@@ -158,6 +170,105 @@ router.post("/", async (req, res) => {
       `¿En qué puedo ayudarte hoy?`;
     
     await sendWhatsAppMessage(from, capabilitiesMessage);
+    return res.sendStatus(200);
+  }
+
+  // Detección y manejo de cumpleaños
+  if (/cumpleaños|cumpleanos|cumple de|cumple|recordar.*cumple/i.test(messageText)) {
+    console.log("🎂 Recordatorio de cumpleaños detectado");
+    
+    // Extraer nombre y fecha con una expresión regular simple
+    const match = messageText.match(/cumple[añanos]* de ([a-záéíóúñ\s]+) el (\d{1,2}) de ([a-záéíóúñ]+)/i);
+    if (match) {
+      const nombre = match[1].trim();
+      const dia = match[2].padStart(2, '0');
+      const mesTexto = match[3].toLowerCase();
+      // Mapeo de meses a número
+      const meses = {
+        'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04', 'mayo': '05', 'junio': '06',
+        'julio': '07', 'agosto': '08', 'septiembre': '09', 'setiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+      };
+      const mes = meses[mesTexto];
+      if (mes) {
+        // Usar el año actual o el próximo si ya pasó
+        const hoy = new Date();
+        let año = hoy.getFullYear();
+        const fechaCumple = new Date(`${año}-${mes}-${dia}T00:00:00-03:00`);
+        if (fechaCumple < hoy) año++;
+        // Guardar como recordatorio especial
+        const reminder = new Reminder({
+          phone: from,
+          title: `Cumpleaños de ${nombre}`,
+          emoji: "🎂",
+          date: new Date(`${año}-${mes}-${dia}T09:00:00-03:00`), // 9am por defecto
+          notifyAt: new Date(`${año}-${mes}-${dia}T09:00:00-03:00`),
+          sent: false
+        });
+        await reminder.save();
+        console.log(`✅ Recordatorio de cumpleaños guardado para ${nombre}`);
+        
+        await sendWhatsAppMessage(from, `🎂 ¡Listo! Te recordaré el cumpleaños de ${nombre} el ${dia} de ${mesTexto} a las 9:00 am.`);
+        return res.sendStatus(200);
+      }
+    }
+    await sendWhatsAppMessage(from, "No pude entender la fecha o el nombre del cumpleaños. Por favor, decime: \"Recordame el cumpleaños de [nombre] el [día] de [mes]\"");
+    return res.sendStatus(200);
+  }
+
+  // Detección y manejo de listas
+  if (/crear lista|nueva lista|lista de|hacer una lista/i.test(messageText)) {
+    console.log("📋 Solicitud de creación de lista detectada");
+    
+    // Extraer tipo de lista y elementos
+    const listMatch = messageText.match(/lista (?:de|para) ([a-záéíóúñ\s]+?)(?:\:|;|con|que tenga)/i);
+    if (!listMatch) {
+      await sendWhatsAppMessage(from, "No pude entender qué tipo de lista querés crear. Por favor, decime algo como: \"Crear lista de compras: leche, pan, huevos\"");
+      return res.sendStatus(200);
+    }
+    
+    const listName = listMatch[1].trim();
+    
+    // Extraer los elementos (todo lo que sigue después de ":")
+    const itemsText = messageText.split(/\:|;/)[1];
+    if (!itemsText) {
+      await sendWhatsAppMessage(from, `Entendí que querés crear una lista de "${listName}" pero no mencionaste los elementos. ¿Qué elementos querés agregar?`);
+      return res.sendStatus(200);
+    }
+    
+    // Convertir el texto de elementos en un array de items
+    const items = itemsText.split(',')
+                          .map(item => item.trim())
+                          .filter(item => item.length > 0)
+                          .map(item => ({ text: item, checked: false }));
+    
+    if (items.length === 0) {
+      await sendWhatsAppMessage(from, `Entendí que querés crear una lista de "${listName}" pero no pude identificar los elementos. Por favor, separalos por comas.`);
+      return res.sendStatus(200);
+    }
+    
+    try {
+      // Guardar la lista en la base de datos
+      const list = new List({
+        phone: from,
+        name: listName,
+        items: items
+      });
+      
+      await list.save();
+      console.log(`✅ Lista "${listName}" guardada con ${items.length} elementos`);
+      
+      // Crear mensaje de confirmación
+      const listMessage = 
+        `📋 ¡Lista de ${listName} creada!\n\n` +
+        items.map((item, index) => `${index + 1}. ${item.text}`).join('\n') + 
+        `\n\nPodés agregar más elementos diciendo: "Agregar [item] a mi lista de ${listName}"`;
+      
+      await sendWhatsAppMessage(from, listMessage);
+    } catch (err) {
+      console.error('Error creando lista:', err);
+      await sendWhatsAppMessage(from, "Ocurrió un error al guardar tu lista. Por favor intentá nuevamente.");
+    }
+    
     return res.sendStatus(200);
   }
 
@@ -288,7 +399,7 @@ async function handleOnboarding(from, messageText, user, res) {
       "🎙️ *Mensajes de voz*: También puedes enviarme notas de voz y las entenderé\n\n" +
       "📋 *Listas*: \"Crear lista de compras: leche, pan, huevos\"\n\n" +
       "🔄 *Recordatorios recurrentes*: \"Recuérdame hacer ejercicio todos los lunes a las 7am\"\n\n" +
-      "�� *Recordatorios de cumpleaños*: \"Recuérdame el cumpleaños de Juan el 15 de mayo\"\n\n" +
+      "🎂 *Recordatorios de cumpleaños*: \"Recuérdame el cumpleaños de Juan el 15 de mayo\"\n\n" +
       "Además con Astorito Premium podrás:\n" +
       "📰 Recibir resúmenes de noticias\n" +  
       "🔄 Conectarlo con tu Google Calendar\n\n" +
