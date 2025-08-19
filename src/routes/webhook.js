@@ -336,7 +336,6 @@ if (parsed.data.recurrence) {
     time: parsed.data.time,
     nextDate: nextOccurrence.toJSDate()
   });
-  await reminderSchedule.save();
   await sendWhatsAppMessage(from, `⏰ Recordatorio recurrente creado: "${parsed.data.title}" ${parsed.data.recurrence}`);
 }
 
