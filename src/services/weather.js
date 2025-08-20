@@ -6,9 +6,9 @@ const { getContext, saveContext } = require('./context');
  * Extrae la ciudad de una consulta de clima
  */
 function extractCityFromQuery(query) {
-  // Patrones comunes para identificar ciudades
+  // Patrones ampliados para identificar ciudades
   const patterns = [
-    /(?:clima|tiempo|temperatura)(?:\s+en|\s+de|\s+para)?\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+?)(?:\s+para|\s+el|\s+hoy|\s+mañana|\?|$)/i,
+    /(?:clima|tiempo|temperatura|pron[oó]stico)(?:\s+en|\s+de|\s+para)?\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+?)(?:\s+para|\s+el|\s+hoy|\s+mañana|\?|$)/i,
     /(?:como esta|estara|va a estar|hay|habrá)(?:\s+el clima|\s+el tiempo|\s+la temperatura)?(?:\s+en|\s+de|\s+para)?\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+?)(?:\s+para|\s+el|\s+hoy|\s+mañana|\?|$)/i,
     /(?:lloverá|llueve|nevará|nieva|hace calor|hace frio)(?:\s+en)?\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+?)(?:\s+para|\s+el|\s+hoy|\s+mañana|\?|$)/i
   ];
@@ -27,6 +27,14 @@ function extractCityFromQuery(query) {
  * Extrae información de fecha de una consulta de clima
  */
 function extractDateFromQuery(query) {
+  // Si contiene "pronóstico" o "pronóstico del tiempo", mostrar varios días por defecto
+  if (/pron[óo]stico|pron[óo]stico del tiempo|previsi[óo]n|previsi[óo]n del tiempo/i.test(query)) {
+    return {
+      days: 3,
+      label: "próximos días"
+    };
+  }
+  
   // Por defecto, el clima es para hoy
   let days = 0;
   let label = "hoy";

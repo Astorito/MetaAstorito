@@ -141,7 +141,7 @@ router.post("/", async (req, res) => {
   }
 
   // Detectar si es una pregunta sobre Astorito
-  const aboutAstorito = /que( es|.s)? astorito|para que sirve|que puede hacer|como funciona|ayuda|help|instrucciones|comandos|funcionalidades|capacidades/i.test(messageText);
+  const aboutAstorito = /que( es|.s)? astorito|para que sirve|para que servis|que (hace|puedes hacer|podes hacer|sabes hacer)|como funciona|ayuda|help|instrucciones|comandos|funcionalidades|capacidades|que sos|qué eres/i.test(messageText);
 
   if (aboutAstorito) {
     console.log("❓ Pregunta sobre Astorito detectada");
