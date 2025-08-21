@@ -11,6 +11,13 @@ const { DateTime } = require('luxon');
 const { findBestEmoji } = require('../utils/emoji');
 const { getContext, saveContext, clearContext } = require('../services/context');
 const { logIncomingInteraction } = require('../services/analytics');
+const { 
+  getUserContext, 
+  updateListContext, 
+  updateWeatherContext, 
+  updateReminderContext, 
+  clearUserContext 
+} = require('../services/userContext');
 
 // Set para recordar usuarios esperando ciudad para clima
 const waitingForCity = new Set();
@@ -225,8 +232,8 @@ router.post("/", async (req, res) => {
   if (/crear lista|nueva lista|lista de|hacer una lista/i.test(messageText)) {
     console.log("📋 Solicitud de creación de lista detectada");
     
-    // Extraer tipo de lista y elementos
-    const listMatch = messageText.match(/lista (?:de|para) ([a-záéíóúñ\s]+?)(?:\:|;|con|que tenga)/i);
+    // Mejorar la extracción del nombre de la lista con un patrón más flexible
+    const listMatch = messageText.match(/lista (?:de |del |para |sobre |con )?([\wáéíóúñüÁÉÍÓÚÑÜ\s]+?)(?:\s*[\:\;]|\s+con\s+|\s+que\s+tenga|\s+para\s+anotar|\s+y\s+agregar)/i);
     if (!listMatch) {
       await sendWhatsAppMessage(from, "No pude entender qué tipo de lista querés crear. Por favor, decime algo como: \"Crear lista de compras: leche, pan, huevos\"");
       return res.sendStatus(200);
@@ -235,7 +242,26 @@ router.post("/", async (req, res) => {
     const listName = listMatch[1].trim();
     
     // Extraer los elementos (todo lo que sigue después de ":")
-    const itemsText = messageText.split(/\:|;/)[1];
+    let itemsText;
+    if (messageText.includes(':')) {
+      itemsText = messageText.split(':')[1];
+    } else if (messageText.includes(';')) {
+      itemsText = messageText.split(';')[1];
+    } else {
+      // Intenta extraer elementos después de "con" o "tenga" si no hay delimitadores
+      const itemsMatch = messageText.match(/(?:con|tenga|agregar|anotar)(?:\s+los\s+siguientes)?(?:\s+items|\s+elementos|\s+productos)?(?:\s*[\:\;])?\s+(.*)/i);
+      itemsText = itemsMatch ? itemsMatch[1] : null;
+    }
+
+    // Si todavía no tenemos elementos, intentar extraerlos después del nombre de la lista
+    if (!itemsText && listMatch) {
+      const afterListName = messageText.substring(messageText.indexOf(listMatch[1]) + listMatch[1].length);
+      // Si hay texto después del nombre de la lista, intentar usarlo como elementos
+      if (afterListName.trim().length > 0) {
+        itemsText = afterListName;
+      }
+    }
+    
     if (!itemsText) {
       await sendWhatsAppMessage(from, `Entendí que querés crear una lista de "${listName}" pero no mencionaste los elementos. ¿Qué elementos querés agregar?`);
       return res.sendStatus(200);
@@ -270,6 +296,8 @@ router.post("/", async (req, res) => {
         `\n\nPodés agregar más elementos diciendo: "Agregar [item] a mi lista de ${listName}"`;
       
       await sendWhatsAppMessage(from, listMessage);
+      // Actualizar contexto de lista
+      await updateListContext(from, listName, 'crear');
     } catch (err) {
       console.error('Error creando lista:', err);
       await sendWhatsAppMessage(from, "Ocurrió un error al guardar tu lista. Por favor intentá nuevamente.");
@@ -279,11 +307,12 @@ router.post("/", async (req, res) => {
   }
 
   // Detección para ver una lista específica
-  if (/ver (mi|la) lista|mostrar (mi|la) lista|listar/i.test(messageText)) {
+  // Ampliar patrones para ver listas
+  if (/ver (mi|la)s? lista|mostrar (mi|la)s? lista|listar|consultar (mi|la)s? lista|(mi|la)s? lista de|que hay en (mi|la)s? lista|muestra (mi|la)s? lista/i.test(messageText)) {
     console.log("📋 Solicitud para ver una lista detectada");
     
-    // Extraer el nombre de la lista
-    const viewMatch = messageText.match(/lista (?:de|del|para) ([a-záéíóúñ\s]+)/i);
+    // Mejorar la extracción del nombre de la lista
+    const viewMatch = messageText.match(/lista (?:de |del |para |sobre )?([\wáéíóúñüÁÉÍÓÚÑÜ\s]+?)(?:$|\?|\.|por favor)/i);
     if (!viewMatch) {
       // Si no se especifica qué lista, mostrar todas las listas del usuario
       try {
@@ -339,12 +368,104 @@ router.post("/", async (req, res) => {
         `\n\nPodés agregar más elementos diciendo: "Agregar [item] a mi lista de ${list.name}"`;
       
       await sendWhatsAppMessage(from, listMessage);
+      // Actualizar contexto a ver lista
+      await updateListContext(from, list.name, 'ver');
     } catch (err) {
       console.error('Error obteniendo lista:', err);
       await sendWhatsAppMessage(from, "Ocurrió un error al consultar tu lista.");
     }
     
     return res.sendStatus(200);
+  }
+
+  // Detección para marcar elementos como completados
+  if (/marcar( como)? (completo|completado|hecho|listo|check|tachado)|completar item|tachar/i.test(messageText)) {
+    console.log("✅ Solicitud para marcar elemento como completado");
+    
+    // Extraer el nombre del elemento y de la lista
+    const markMatch = messageText.match(/marcar(?:\s+como)?(?:\s+completo|completado|hecho|listo|check|tachado)?\s+([\wáéíóúñüÁÉÍÓÚÑÜ\s]+?)(?:\s+en|\s+de)?\s+(?:mi |la )?lista(?:\s+de|\s+del)?\s+([\wáéíóúñüÁÉÍÓÚÑÜ\s]+)/i);
+    
+    if (!markMatch) {
+      await sendWhatsAppMessage(from, "No pude entender qué elemento querés marcar como completado. Por favor, decime algo como: \"Marcar leche como completado en mi lista de compras\"");
+      return res.sendStatus(200);
+    }
+    
+    const itemText = markMatch[1].trim();
+    const listName = markMatch[2].trim();
+    
+    try {
+      // Buscar la lista
+      const list = await List.findOne({
+        phone: from,
+        name: { $regex: new RegExp(listName, 'i') }
+      });
+      
+      if (!list) {
+        await sendWhatsAppMessage(from, `No encontré ninguna lista llamada "${listName}". ¿Querés crear una nueva?`);
+        return res.sendStatus(200);
+      }
+      
+      // Buscar el elemento en la lista por similitud de texto
+      let found = false;
+      for (let i = 0; i < list.items.length; i++) {
+        if (list.items[i].text.toLowerCase().includes(itemText.toLowerCase()) ||
+            itemText.toLowerCase().includes(list.items[i].text.toLowerCase())) {
+          list.items[i].checked = true;
+          found = true;
+          break;
+        }
+      }
+      
+      if (!found) {
+        await sendWhatsAppMessage(from, `No encontré "${itemText}" en tu lista de ${list.name}. Revisa el nombre del elemento.`);
+        return res.sendStatus(200);
+      }
+      
+      // Guardar la lista actualizada
+      await list.save();
+      
+      await sendWhatsAppMessage(from, `✅ ¡Listo! Marqué "${itemText}" como completado en tu lista de ${list.name}.`);
+      return res.sendStatus(200);
+    } catch (err) {
+      console.error('Error actualizando lista:', err);
+      await sendWhatsAppMessage(from, "Ocurrió un error al actualizar tu lista.");
+      return res.sendStatus(200);
+    }
+  }
+
+  // Detección para eliminar una lista
+  if (/eliminar lista|borrar lista|quitar lista|remover lista/i.test(messageText)) {
+    console.log("🗑️ Solicitud para eliminar una lista");
+    
+    // Extraer el nombre de la lista
+    const deleteMatch = messageText.match(/(?:eliminar|borrar|quitar|remover) (?:mi |la )?lista (?:de |del )?([\wáéíóúñüÁÉÍÓÚÑÜ\s]+)/i);
+    
+    if (!deleteMatch) {
+      await sendWhatsAppMessage(from, "No pude entender qué lista querés eliminar. Por favor, decime algo como: \"Eliminar mi lista de compras\"");
+      return res.sendStatus(200);
+    }
+    
+    const listName = deleteMatch[1].trim();
+    
+    try {
+      // Buscar y eliminar la lista
+      const result = await List.findOneAndDelete({
+        phone: from,
+        name: { $regex: new RegExp(listName, 'i') }
+      });
+      
+      if (!result) {
+        await sendWhatsAppMessage(from, `No encontré ninguna lista llamada "${listName}".`);
+        return res.sendStatus(200);
+      }
+      
+      await sendWhatsAppMessage(from, `🗑️ Lista "${listName}" eliminada correctamente.`);
+      return res.sendStatus(200);
+    } catch (err) {
+      console.error('Error eliminando lista:', err);
+      await sendWhatsAppMessage(from, "Ocurrió un error al eliminar tu lista.");
+      return res.sendStatus(200);
+    }
   }
 
   // CLASIFICACIÓN DE MENSAJES con OpenAI
@@ -358,7 +479,13 @@ router.post("/", async (req, res) => {
       case 'CLIMA':
         console.log("🌦️ Consulta de clima detectada");
         
-        // Manejar la consulta de clima (la función handleWeatherQuery ya tiene la lógica de contexto)
+        // Extraer ciudad para actualizar contexto
+        const cityMatch = messageText.match(/clima (?:en|de|para) ([a-záéíóúñ\s]+)/i);
+        if (cityMatch && cityMatch[1]) {
+          await updateWeatherContext(from, cityMatch[1].trim());
+        }
+        
+        // Manejar la consulta de clima
         await handleWeatherQuery(messageText, from);
         return res.sendStatus(200);
         
@@ -402,6 +529,8 @@ router.post("/", async (req, res) => {
           });
 
           await reminder.save();
+          // Actualizar contexto de recordatorio
+          await updateReminderContext(from, parsed.data.title);
 
           const confirmMessage =
             `✅ Recordatorio creado!\n\n` +
@@ -420,6 +549,9 @@ router.post("/", async (req, res) => {
       case 'GENERALQUERY':
       default:
         console.log("❓ Consulta general detectada");
+        // Limpiar contexto para consultas generales
+        await clearUserContext(from);
+        
         try {
           // Obtener respuesta corta de GPT
           const gpt = await getGPTResponse(messageText);

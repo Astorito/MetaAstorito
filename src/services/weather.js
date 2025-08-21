@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { getContext, saveContext } = require('./context');
+const { updateWeatherContext } = require('./userContext');
 
 /**
  * Extrae la ciudad de una consulta de clima
@@ -207,37 +208,11 @@ async function handleWeatherQuery(message, phone) {
   try {
     console.log(`🌤️ Procesando consulta de clima: "${message}" de ${phone}`);
     
-    let city;
-    const context = getContext(phone);
+    let city = extractCityFromQuery(message);
     
-    // SOLUCIÓN: Mejorar detección de preguntas de seguimiento
-    const isFollowUpQuestion = /^(y|que tal|como esta|cómo está|va a|va a estar|hay|estará|estara)?\s*(hoy|mañana|ahora|esta tarde|esta noche|pasado mañana|proximos dias|próximos días|siguiente semana|la semana que viene|fin de semana)?\??$/i.test(message.trim()) || 
-    // Esta segunda parte detecta patrones como "Y en los próximos días?"
-    /^y\s+(en|para)\s+(los|el|la|las)?\s*(próximos?|proximos?|siguientes?|resto de los)?\s*(dias?|semanas?|horas?).*$/i.test(message.trim());
-    
-    if (isFollowUpQuestion && context && context.lastCity) {
-      // Si es pregunta de seguimiento y tenemos contexto, usar la ciudad del contexto
-      city = context.lastCity;
-      console.log(`🧠 Usando ciudad del contexto: ${city}`);
-      
-      // Si la pregunta es sobre "próximos días" pero no lo especifica explícitamente,
-      // forzar el modo de pronóstico de múltiples días
-      if (message.toLowerCase().includes("proxim") || 
-          message.toLowerCase().includes("próxim") ||
-          message.toLowerCase().includes("siguient") ||
-          message.toLowerCase().includes("fin de semana")) {
-        // Forzar consulta de múltiples días
-        message = `clima en ${city} para los próximos 3 días`;
-        console.log(`🔄 Reformulando consulta: "${message}"`);
-      }
-    } else {
-      // Si no, intentar extraer ciudad del mensaje
-      city = extractCityFromQuery(message);
-      
-      // Si no se pudo extraer ciudad, pedir al usuario
-      if (!city || city.length < 2) {
-        return await sendWhatsAppMessage(phone, "¿Para qué ciudad quieres saber el clima?");
-      }
+    // Si se extrajo una ciudad, actualizar el contexto
+    if (city) {
+      await updateWeatherContext(phone, city);
     }
     
     // Determinar para qué día es la consulta
