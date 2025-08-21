@@ -245,6 +245,46 @@ async function handleWeatherQuery(message, phone) {
   }
 }
 
+// En el archivo que asigna emojis a recordatorios
+
+function selectEmojiForReminder(title) {
+  // Palabras clave para cada categoría
+  const emojiMap = {
+    "✈️": ["viaje", "viajar", "viajo", "aeropuerto", "vuelo", "volar", "chile", "esquiar"],
+    "🏥": ["doctor", "médico", "hospital", "consulta", "revisión", "salud"],
+    "🎂": ["cumpleaños", "aniversario", "celebración"],
+    "💼": ["trabajo", "reunión", "entrevista", "oficina", "presentación"],
+    "💊": ["medicina", "pastilla", "remedio", "tomar"],
+    "📞": ["llamar", "llamada", "teléfono", "contactar"],
+    "🛒": ["comprar", "compras", "supermercado", "tienda"],
+    "⚽": ["partido", "juego", "fútbol", "deporte"]
+  };
+  
+  // Título en minúsculas para comparar
+  const lowerTitle = title.toLowerCase();
+  
+  // Buscar coincidencias
+  for (const [emoji, keywords] of Object.entries(emojiMap)) {
+    if (keywords.some(keyword => lowerTitle.includes(keyword))) {
+      return emoji;
+    }
+  }
+  
+  // Emoji predeterminado si no hay coincidencias
+  return "⏰";
+}
+
+// Cambiar esto:
+const displayDate = reminder.date.toLocaleString('es-AR', { 
+  weekday: 'long', 
+  day: 'numeric', 
+  month: 'long',
+  hour: '2-digit',
+  minute: '2-digit' 
+});
+
+// Para asegurar que se muestra en la zona horaria correcta
+
 module.exports = {
   handleWeatherQuery,
   extractCityFromQuery,
