@@ -275,13 +275,13 @@ function selectEmojiForReminder(title) {
 }
 
 // Cambiar esto:
-const displayDate = reminder.date.toLocaleString('es-AR', { 
-  weekday: 'long', 
-  day: 'numeric', 
-  month: 'long',
-  hour: '2-digit',
-  minute: '2-digit' 
-});
+// const displayDate = reminder.date.toLocaleString('es-AR', { 
+//   weekday: 'long', 
+//   day: 'numeric', 
+//   month: 'long',
+//   hour: '2-digit',
+//   minute: '2-digit' 
+// });
 
 // Para asegurar que se muestra en la zona horaria correcta
 
