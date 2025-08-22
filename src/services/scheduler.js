@@ -82,6 +82,9 @@ function startScheduler() {
 
 // Función para crear recordatorios con ajuste de zona horaria
 async function createReminder(phone, reminderData) {
+  console.log(`⏰ createReminder - Fecha original: ${reminderData.date}`);
+  console.log(`🌐 createReminder - Offset del servidor: ${new Date().getTimezoneOffset()}`);
+  
   // Ajustar la zona horaria para Argentina (GMT-3)
   const reminderDate = new Date(reminderData.date);
   
@@ -183,3 +186,38 @@ module.exports = {
   createReminder,
   getEmojiForReminder
 };
+
+// En webhook.js o donde proceses recordatorios
+const { createReminder, getEmojiForReminder } = require('../services/scheduler');
+
+// Cuando procesas un mensaje de tipo recordatorio:
+async function processReminderMessage(message, phone) {
+  // Parse del mensaje para extraer fecha e info
+  const parsedData = await parseReminderMessage(message);
+  
+  // En webhook.js antes de llamar a createReminder:
+  console.log(`📅 Fecha original parseada: ${parsedData.date}`);
+  console.log(`🧐 Título del recordatorio: ${parsedData.title}`);
+  
+  // Usar las funciones de scheduler.js para crear el recordatorio
+  const reminder = await createReminder(phone, {
+    title: parsedData.title,
+    date: parsedData.date,  // Esta fecha debe ser la original (9am)
+    // No necesitas calcular el emoji, la función createReminder lo hace
+  });
+  
+  // Mostrar confirmación al usuario
+  const eventDate = DateTime.fromJSDate(reminder.date)
+                    .setZone('America/Argentina/Buenos_Aires');
+  const formattedDate = eventDate.toFormat("EEEE d 'de' MMMM 'a las' HH:mm", { locale: 'es' });
+  
+  // Usar el emoji que retornó createReminder
+  const confirmationMessage = 
+    `✅ Recordatorio creado!\n\n` +
+    `${reminder.emoji} ${reminder.title}\n` +
+    `📅 Fecha: ${formattedDate}\n` +
+    `⏰ Te avisaré: ${formattedDate}\n\n` +
+    `Avisanos si querés agendar otro evento!`;
+    
+  return confirmationMessage;
+}
