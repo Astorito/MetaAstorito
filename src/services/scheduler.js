@@ -178,13 +178,3 @@ module.exports = {
   checkReminders
 };
 
-// Ya se ha declarado displayDate antes, así que usamos otra variable o reutilizamos la existente
-let formattedDate = reminder.date.toLocaleString('es-AR', {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long',
-  hour: '2-digit',
-  minute: '2-digit',
-  timeZone: 'America/Argentina/Buenos_Aires' // Especificar explícitamente la zona horaria
-});
-
