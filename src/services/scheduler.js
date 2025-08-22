@@ -79,8 +79,132 @@ function startScheduler() {
   checkReminders();
 }
 
+// Buscar el archivo de servicio de recordatorios
+find /workspaces/MetaAstorito/src/ -name "*reminder*.js" -o -name "*schedule*.js"
+
+// Buscar en webhook.js dónde se procesan los recordatorios
+grep -n "reminder\|recordatorio" /workspaces/MetaAstorito/src/routes/webhook.js
+
+// Localiza la función donde se crea el recordatorio y ajusta la zona horaria:
+async function createReminder(phone, reminderData) {
+  // MODIFICAR: Ajustar la zona horaria para Argentina (GMT-3)
+  const reminderDate = new Date(reminderData.date);
+  
+  // Fix: Ajustar zona horaria para Argentina (GMT-3)
+  const argentinaOffset = -3 * 60; // -3 horas en minutos
+  const serverOffset = reminderDate.getTimezoneOffset(); // Offset del servidor en minutos
+  const totalOffsetMinutes = serverOffset - argentinaOffset;
+  
+  // Aplicar el ajuste solo si es necesario (si los offset son diferentes)
+  if (totalOffsetMinutes !== 0) {
+    reminderDate.setMinutes(reminderDate.getMinutes() + totalOffsetMinutes);
+    console.log(`Ajuste de zona horaria: Original=${reminderData.date}, Ajustada=${reminderDate}`);
+  }
+  
+  // Usar la fecha ajustada para el recordatorio
+  const reminder = new Reminder({
+    phone,
+    title: reminderData.title,
+    date: reminderDate,
+    // ... resto del código existente ...
+  });
+  
+  // ... resto de la función ...
+}
+
+// Añadir o modificar función para seleccionar emoji apropiado:
+function getEmojiForReminder(title) {
+  const lowercaseTitle = title.toLowerCase();
+  
+  // Mapa mejorado de categorías con emojis y palabras clave
+  const categories = [
+    {
+      emoji: "✈️",
+      keywords: ["viaje", "viajar", "viajo", "vuelo", "avión", "aeropuerto"]
+    },
+    {
+      emoji: "🏔️",
+      keywords: ["montaña", "esquiar", "esquí", "nieve", "chile", "bariloche", "cerro", "montañas", "alpino"]
+    },
+    {
+      emoji: "🏥",
+      keywords: ["médico", "doctor", "hospital", "clínica", "salud", "consulta", "medicina", "revisión"]
+    },
+    {
+      emoji: "💼",
+      keywords: ["trabajo", "reunión", "oficina", "entrevista", "cliente", "proyecto", "presentación", "negocio"]
+    },
+    {
+      emoji: "🎂",
+      keywords: ["cumpleaños", "aniversario", "celebración", "fiesta", "cumple"]
+    },
+    {
+      emoji: "📞",
+      keywords: ["llamar", "llamada", "teléfono", "contactar", "comunicar"]
+    },
+    {
+      emoji: "💊",
+      keywords: ["medicina", "pastilla", "remedio", "tomar", "tratamiento", "medicación"]
+    },
+    {
+      emoji: "🛒",
+      keywords: ["comprar", "compras", "supermercado", "tienda", "shopping"]
+    },
+    {
+      emoji: "📚",
+      keywords: ["estudiar", "estudio", "examen", "leer", "curso", "clase"]
+    },
+    {
+      emoji: "⚽",
+      keywords: ["partido", "juego", "fútbol", "deporte", "pelota", "cancha", "estadio"]
+    },
+    {
+      emoji: "🍴",
+      keywords: ["comer", "comida", "restaurante", "almuerzo", "cena", "desayuno"]
+    },
+    {
+      emoji: "🔄",
+      keywords: ["repetir", "recurrente", "diario", "semanal", "mensual"]
+    }
+  ];
+  
+  // Buscar coincidencias
+  for (const category of categories) {
+    if (category.keywords.some(keyword => lowercaseTitle.includes(keyword))) {
+      return category.emoji;
+    }
+  }
+  
+  // Emoji predeterminado
+  return "🔔";
+}
+
 module.exports = {
   startScheduler,
   checkReminders
 };
+
+// Archivo: /workspaces/MetaAstorito/src/routes/webhook.js
+
+// Encuentra el bloque donde se formatea la fecha para mostrarla al usuario
+// y modifícalo para especificar explícitamente la zona horaria:
+
+// Por ejemplo, busca algo como:
+const displayDate = reminder.date.toLocaleString('es-AR', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  hour: '2-digit',
+  minute: '2-digit'
+});
+
+// Modifícalo para incluir la zona horaria:
+const displayDate = reminder.date.toLocaleString('es-AR', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'America/Argentina/Buenos_Aires' // Especificar explícitamente la zona horaria
+});
 
