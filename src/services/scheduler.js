@@ -1,3 +1,4 @@
+// filepath: /workspaces/MetaAstorito/src/services/scheduler.js
 const Reminder = require('../models/reminder');
 const User = require('../models/user');
 const { sendWhatsAppMessage } = require('./whatsapp');
@@ -79,12 +80,12 @@ function startScheduler() {
   checkReminders();
 }
 
-// Localiza la función donde se crea el recordatorio y ajusta la zona horaria:
+// Función para crear recordatorios con ajuste de zona horaria
 async function createReminder(phone, reminderData) {
-  // MODIFICAR: Ajustar la zona horaria para Argentina (GMT-3)
+  // Ajustar la zona horaria para Argentina (GMT-3)
   const reminderDate = new Date(reminderData.date);
   
-  // Fix: Ajustar zona horaria para Argentina (GMT-3)
+  // Ajustar zona horaria para Argentina (GMT-3)
   const argentinaOffset = -3 * 60; // -3 horas en minutos
   const serverOffset = reminderDate.getTimezoneOffset(); // Offset del servidor en minutos
   const totalOffsetMinutes = serverOffset - argentinaOffset;
@@ -100,14 +101,16 @@ async function createReminder(phone, reminderData) {
     phone,
     title: reminderData.title,
     date: reminderDate,
-    emoji: reminderData.emoji, // Asegurarse de que el emoji se guarde
-    // ... resto del código existente ...
+    emoji: reminderData.emoji || getEmojiForReminder(reminderData.title),
+    notifyAt: reminderData.notifyAt || reminderDate,
+    sent: false
   });
   
-  // ... resto de la función ...
+  await reminder.save();
+  return reminder;
 }
 
-// Añadir o modificar función para seleccionar emoji apropiado:
+// Función para seleccionar emoji apropiado
 function getEmojiForReminder(title) {
   const lowercaseTitle = title.toLowerCase();
   
@@ -180,17 +183,3 @@ module.exports = {
   createReminder,
   getEmojiForReminder
 };
-
-// En src/routes/webhook.js o el archivo que maneja los recordatorios
-const { createReminder, getEmojiForReminder } = require('../services/scheduler');
-
-// Donde procesas el mensaje de recordatorio:
-const emoji = getEmojiForReminder(reminderTitle);
-
-await createReminder(from, {
-  title: reminderTitle,
-  date: reminderDate,
-  emoji: emoji  // Añadir el emoji
-  // otros campos
-});
-
