@@ -45,7 +45,7 @@ async function checkReminders() {
         // Mensaje personalizado con el nombre del usuario
         const message = 
           `⏰ ¡Hola ${userName}! Recordatorio:\n\n` +
-          `${reminder.emoji} *${reminder.title}*\n` +
+          `${reminder.emoji || '🔔'} *${reminder.title}*\n` +
           `📅 ${formattedDate} a las ${formattedTime}\n\n` +
           `No te olvides!`;
         
@@ -99,12 +99,16 @@ async function createReminder(phone, reminderData) {
     console.log(`Ajuste de zona horaria: Original=${reminderData.date}, Ajustada=${reminderDate}`);
   }
   
+  // Seleccionar emoji apropiado
+  const emoji = getEmojiForReminder(reminderData.title);
+  console.log(`🎭 Emoji seleccionado para "${reminderData.title}": ${emoji}`);
+  
   // Usar la fecha ajustada para el recordatorio
   const reminder = new Reminder({
     phone,
     title: reminderData.title,
     date: reminderDate,
-    emoji: reminderData.emoji || getEmojiForReminder(reminderData.title),
+    emoji: emoji,
     notifyAt: reminderData.notifyAt || reminderDate,
     sent: false
   });
@@ -186,38 +190,3 @@ module.exports = {
   createReminder,
   getEmojiForReminder
 };
-
-// En webhook.js o donde proceses recordatorios
-const { createReminder, getEmojiForReminder } = require('../services/scheduler');
-
-// Cuando procesas un mensaje de tipo recordatorio:
-async function processReminderMessage(message, phone) {
-  // Parse del mensaje para extraer fecha e info
-  const parsedData = await parseReminderMessage(message);
-  
-  // En webhook.js antes de llamar a createReminder:
-  console.log(`📅 Fecha original parseada: ${parsedData.date}`);
-  console.log(`🧐 Título del recordatorio: ${parsedData.title}`);
-  
-  // Usar las funciones de scheduler.js para crear el recordatorio
-  const reminder = await createReminder(phone, {
-    title: parsedData.title,
-    date: parsedData.date,  // Esta fecha debe ser la original (9am)
-    // No necesitas calcular el emoji, la función createReminder lo hace
-  });
-  
-  // Mostrar confirmación al usuario
-  const eventDate = DateTime.fromJSDate(reminder.date)
-                    .setZone('America/Argentina/Buenos_Aires');
-  const formattedDate = eventDate.toFormat("EEEE d 'de' MMMM 'a las' HH:mm", { locale: 'es' });
-  
-  // Usar el emoji que retornó createReminder
-  const confirmationMessage = 
-    `✅ Recordatorio creado!\n\n` +
-    `${reminder.emoji} ${reminder.title}\n` +
-    `📅 Fecha: ${formattedDate}\n` +
-    `⏰ Te avisaré: ${formattedDate}\n\n` +
-    `Avisanos si querés agendar otro evento!`;
-    
-  return confirmationMessage;
-}
