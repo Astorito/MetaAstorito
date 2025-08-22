@@ -79,12 +79,6 @@ function startScheduler() {
   checkReminders();
 }
 
-// Buscar el archivo de servicio de recordatorios
-find /workspaces/MetaAstorito/src/ -name "*reminder*.js" -o -name "*schedule*.js"
-
-// Buscar en webhook.js dónde se procesan los recordatorios
-grep -n "reminder\|recordatorio" /workspaces/MetaAstorito/src/routes/webhook.js
-
 // Localiza la función donde se crea el recordatorio y ajusta la zona horaria:
 async function createReminder(phone, reminderData) {
   // MODIFICAR: Ajustar la zona horaria para Argentina (GMT-3)
