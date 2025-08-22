@@ -1,0 +1,66 @@
+const Reminder = require('../models/reminder');
+const { sendWhatsAppMessage } = require('./whatsapp');
+
+async function checkReminders() {
+  // Tu implementación existente
+}
+
+function startScheduler() {
+  console.log('🔄 Iniciando programador de recordatorios');
+  setInterval(checkReminders, 60000);
+  checkReminders();
+}
+
+async function createReminder(phone, reminderData) {
+  // Ajustar zona horaria para Argentina
+  const reminderDate = new Date(reminderData.date);
+  const argentinaOffset = -3 * 60;
+  const serverOffset = reminderDate.getTimezoneOffset();
+  const totalOffsetMinutes = serverOffset - argentinaOffset;
+  
+  if (totalOffsetMinutes !== 0) {
+    reminderDate.setMinutes(reminderDate.getMinutes() + totalOffsetMinutes);
+  }
+  
+  const emoji = getEmojiForReminder(reminderData.title);
+  
+  const reminder = new Reminder({
+    phone,
+    title: reminderData.title,
+    date: reminderDate,
+    emoji: emoji,
+    notifyAt: reminderData.notifyAt || reminderDate,
+    sent: false
+  });
+  
+  await reminder.save();
+  return reminder;
+}
+
+function getEmojiForReminder(title) {
+  const lowercaseTitle = title.toLowerCase();
+  
+  if (lowercaseTitle.includes('esquiar') || lowercaseTitle.includes('chile') || 
+      lowercaseTitle.includes('montaña') || lowercaseTitle.includes('nieve')) {
+    return '🏔️';
+  }
+  
+  if (lowercaseTitle.includes('viaje') || lowercaseTitle.includes('viajar') || 
+      lowercaseTitle.includes('aeropuerto') || lowercaseTitle.includes('vuelo')) {
+    return '✈️';
+  }
+  
+  if (lowercaseTitle.includes('médico') || lowercaseTitle.includes('doctor') || 
+      lowercaseTitle.includes('hospital')) {
+    return '🏥';
+  }
+  
+  return '⏰';  // Emoji predeterminado
+}
+
+module.exports = {
+  startScheduler,
+  checkReminders,
+  createReminder,
+  getEmojiForReminder
+};
