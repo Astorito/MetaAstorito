@@ -274,31 +274,6 @@ function selectEmojiForReminder(title) {
   return "⏰";
 }
 
-// Cambiar esto:
-// const displayDate = reminder.date.toLocaleString('es-AR', { 
-//   weekday: 'long', 
-//   day: 'numeric', 
-//   month: 'long',
-//   hour: '2-digit',
-//   minute: '2-digit' 
-// });
-
-// Para asegurar que se muestra en la zona horaria correcta
-
-// Ejemplo de corrección en el archivo de recordatorios
-
-// ANTES:
-// const reminderDate = new Date(parsedDate);
-
-// DESPUÉS:
-const reminderDate = new Date(parsedDate);
-// Ajustamos la zona horaria para Argentina (GMT-3)
-const userTimezoneOffset = -3 * 60; // -3 horas en minutos
-const currentOffset = reminderDate.getTimezoneOffset(); // Offset del servidor en minutos
-reminderDate.setMinutes(reminderDate.getMinutes() + currentOffset - userTimezoneOffset);
-
-console.log(`Fecha original: ${parsedDate}`);
-console.log(`Fecha ajustada: ${reminderDate}`);
 
 module.exports = {
   handleWeatherQuery,
