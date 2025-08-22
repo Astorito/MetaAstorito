@@ -100,6 +100,7 @@ async function createReminder(phone, reminderData) {
     phone,
     title: reminderData.title,
     date: reminderDate,
+    emoji: reminderData.emoji, // Asegurarse de que el emoji se guarde
     // ... resto del código existente ...
   });
   
@@ -175,6 +176,21 @@ function getEmojiForReminder(title) {
 
 module.exports = {
   startScheduler,
-  checkReminders
+  checkReminders,
+  createReminder,
+  getEmojiForReminder
 };
+
+// En src/routes/webhook.js o el archivo que maneja los recordatorios
+const { createReminder, getEmojiForReminder } = require('../services/scheduler');
+
+// Donde procesas el mensaje de recordatorio:
+const emoji = getEmojiForReminder(reminderTitle);
+
+await createReminder(from, {
+  title: reminderTitle,
+  date: reminderDate,
+  emoji: emoji  // Añadir el emoji
+  // otros campos
+});
 
