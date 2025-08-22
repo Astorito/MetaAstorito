@@ -178,20 +178,6 @@ module.exports = {
   checkReminders
 };
 
-// Archivo: /workspaces/MetaAstorito/src/routes/webhook.js
-
-// Encuentra el bloque donde se formatea la fecha para mostrarla al usuario
-// y modifícalo para especificar explícitamente la zona horaria:
-
-// Por ejemplo, busca algo como:
-const displayDate = reminder.date.toLocaleString('es-AR', {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long',
-  hour: '2-digit',
-  minute: '2-digit'
-});
-
 // Ya se ha declarado displayDate antes, así que usamos otra variable o reutilizamos la existente
 let formattedDate = reminder.date.toLocaleString('es-AR', {
   weekday: 'long',
