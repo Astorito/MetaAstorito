@@ -192,8 +192,8 @@ const displayDate = reminder.date.toLocaleString('es-AR', {
   minute: '2-digit'
 });
 
-// Modifícalo para incluir la zona horaria:
-const displayDate = reminder.date.toLocaleString('es-AR', {
+// Ya se ha declarado displayDate antes, así que usamos otra variable o reutilizamos la existente
+let formattedDate = reminder.date.toLocaleString('es-AR', {
   weekday: 'long',
   day: 'numeric',
   month: 'long',
